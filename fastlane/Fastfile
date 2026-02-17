@@ -26,7 +26,8 @@ platform :mac do
     app_path = find_app_path
     UI.user_error!("Could not find built app in DerivedData") unless app_path
 
-    sh("codesign -f -s '#{SIGN_IDENTITY}' --deep --options runtime '#{app_path}'")
+    entitlements = File.expand_path("../OnePassQuick/Resources/OnePassQuick.entitlements")
+    sh("codesign -f -s '#{SIGN_IDENTITY}' --deep --options runtime --entitlements '#{entitlements}' '#{app_path}'")
     UI.success("Signed: #{app_path}")
   end
 

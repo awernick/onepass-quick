@@ -24,6 +24,7 @@ targets:
         CFBundleShortVersionString: "1.0.0"
         LSUIElement: true
         NSHighResolutionCapable: true
+        NSAppleEventsUsageDescription: "OnePass Quick needs to open URLs in your browser and restore focus to the previous app."
     settings:
       base:
         SWIFT_VERSION: "5.9"
@@ -37,6 +38,7 @@ targets:
         COMBINE_HIDPI_IMAGES: true
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_ENTITLEMENTS: OnePassQuick/Resources/OnePassQuick.entitlements
         # Note: The built binary is ad-hoc signed. Run the post-build
         # re-sign step (see AGENTS.md build instructions) to get a stable
         # signature for Accessibility permissions.

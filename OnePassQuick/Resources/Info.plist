@@ -22,6 +22,8 @@
 	<string>1</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>OnePass Quick needs to open URLs in your browser and restore focus to the previous app.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 </dict>
