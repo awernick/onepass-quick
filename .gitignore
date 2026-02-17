@@ -13,6 +13,11 @@ xcuserdata/
 *.swp
 *~
 
+# Fastlane auto-generated
+fastlane/report.xml
+fastlane/README.md
+fastlane/test_output/
+
 # Swift Package Manager (if used in future)
 .build/
 Packages/

@@ -1,0 +1,51 @@
+default_platform(:mac)
+
+APP_NAME = "OnePassQuick"
+PROJECT = "#{APP_NAME}.xcodeproj"
+SCHEME = APP_NAME
+SIGN_IDENTITY = "Apple Development"
+
+platform :mac do
+  desc "Generate Xcode project from project.yml"
+  lane :generate do
+    sh("cd .. && xcodegen generate")
+  end
+
+  desc "Build and sign the app for development"
+  lane :build do
+    generate
+
+    xcodebuild(
+      project: PROJECT,
+      scheme: SCHEME,
+      configuration: "Debug",
+      build: true,
+      xcargs: "CODE_SIGN_IDENTITY='-'"
+    )
+
+    app_path = find_app_path
+    UI.user_error!("Could not find built app in DerivedData") unless app_path
+
+    sh("codesign -f -s '#{SIGN_IDENTITY}' --deep --options runtime '#{app_path}'")
+    UI.success("Signed: #{app_path}")
+  end
+
+  desc "Build, sign, and launch the app"
+  lane :launch do
+    build
+    app_path = find_app_path
+    sh("open '#{app_path}'")
+  end
+
+  desc "Clean build artifacts"
+  lane :clean do
+    xcclean(project: PROJECT, scheme: SCHEME)
+  end
+end
+
+def find_app_path
+  derived_data = File.expand_path("~/Library/Developer/Xcode/DerivedData")
+  app_dir = Dir.glob("#{derived_data}/#{APP_NAME}-*").first
+  return nil unless app_dir
+  "#{app_dir}/Build/Products/Debug/#{APP_NAME}.app"
+end
