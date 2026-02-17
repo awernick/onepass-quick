@@ -129,12 +129,19 @@ final class HotkeyManager {
             && !flags.contains(.maskAlternate)
             && !flags.contains(.maskShift)
 
-        if isBackslash && isCommand && noExtraModifiers {
+        let isAutoRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+
+        if isBackslash && isCommand && noExtraModifiers && !isAutoRepeat {
             Self.log.debug("Cmd+\\ detected -- consuming event and toggling panel")
             DispatchQueue.main.async { [weak self] in
                 self?.handler()
             }
             // Consume the event so other apps don't also react
+            return nil
+        }
+
+        // Still consume auto-repeat Cmd+\ so it doesn't leak to other apps
+        if isBackslash && isCommand && noExtraModifiers && isAutoRepeat {
             return nil
         }
 
