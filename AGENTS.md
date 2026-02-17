@@ -156,6 +156,13 @@ Cmd+\ pressed
 These shortcuts are the primary reason this app exists. They must be
 customizable in a future version, but for the MVP they are hardcoded.
 
+## Development Tooling
+
+| Tool | Purpose |
+|------|---------|
+| XcodeBuildMCP | Build Xcode projects, parse errors |
+| Playwright MCP | Not applicable (no web UI) |
+
 ## Milestones
 
 Development is tracked in GitHub issue #1. The milestones are:
@@ -167,6 +174,66 @@ Development is tracked in GitHub issue #1. The milestones are:
 
 Implement milestones sequentially. Each milestone should produce a working
 (if incomplete) app.
+
+### Milestone to Version Mapping
+
+| Milestone | Version | Description |
+|-----------|---------|-------------|
+| M1: Window + Hotkey | v0.1.0 | NSPanel, global hotkey, AeroSpace compat |
+| M2: Search + Results | v0.2.0 | op CLI integration, search, results list |
+| M3: Actions + Clipboard | v0.3.0 | Copy credentials, open URL, concealed clipboard |
+| M4: Polish | v1.0.0 | Caching, start at login, distribution |
+
+### QA Before Commit
+
+After completing a milestone, **do not commit immediately**. Human QA is
+non-negotiable for UI work:
+
+1. Build and run the app
+2. Output a list of **test scenarios** the user should manually verify
+3. Wait for the user to confirm everything works or report issues
+4. Fix any issues found during QA
+5. Only then commit, push, and close issues
+
+The user must always get a chance to interact with the result before it's
+committed. Never skip this step.
+
+## Git Workflow
+
+> General git workflow (issue-first, conventional commits, semver, releasing)
+> is defined in the global `~/.config/opencode/AGENTS.md`.
+
+### Conventional Commit Scopes
+
+**Scopes:** `panel`, `hotkey`, `search`, `clipboard`, `ui`
+
+**Examples:**
+```
+feat(panel): add NSPanel with floating window level
+feat(hotkey): register global Cmd+\ via CGEvent tap
+feat(search): integrate op CLI item list
+fix(clipboard): auto-clear after 30s not firing
+chore: scaffold Xcode project
+```
+
+## Scope
+
+### Current (MVP)
+- Global hotkey (`Cmd+\`) to show/hide panel
+- Search 1Password items via `op` CLI
+- Copy username (`Cmd+C`) and password (`Cmd+Shift+C`)
+- Open URL in browser (`Enter`)
+- Open in 1Password app (`Cmd+O`)
+- Concealed clipboard with 30s auto-clear
+- Menu bar icon, no dock icon
+- Dark translucent panel appearance
+
+### Deferred
+- Customizable keyboard shortcuts (settings UI)
+- OTP / one-time password support
+- Multiple vault filtering
+- Favorites / recent items
+- Homebrew cask for distribution
 
 ## Code Style
 
