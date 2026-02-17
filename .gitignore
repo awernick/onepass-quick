@@ -1,0 +1,18 @@
+# Generated Xcode project (regenerate with `xcodegen generate`)
+OnePassQuick.xcodeproj/
+
+# Xcode
+build/
+DerivedData/
+*.xcuserdata
+*.xcworkspace
+xcuserdata/
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# Swift Package Manager (if used in future)
+.build/
+Packages/

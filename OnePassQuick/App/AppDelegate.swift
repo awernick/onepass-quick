@@ -1,0 +1,75 @@
+import AppKit
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+
+    private var statusItem: NSStatusItem?
+    private var panelController: PanelController?
+    private var hotkeyManager: HotkeyManager?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        setupMenuBar()
+        panelController = PanelController()
+        hotkeyManager = HotkeyManager { [weak self] in
+            self?.panelController?.toggle()
+        }
+        updateMenuBarStatus()
+    }
+
+    // MARK: - Menu Bar
+
+    private func setupMenuBar() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+
+        if let button = statusItem?.button {
+            button.image = NSImage(
+                systemSymbolName: "key.fill",
+                accessibilityDescription: "OnePass Quick"
+            )
+        }
+
+        rebuildMenu()
+    }
+
+    private func rebuildMenu() {
+        let menu = NSMenu()
+
+        let statusTitle = hotkeyStatus()
+        let statusItem = NSMenuItem(title: statusTitle, action: nil, keyEquivalent: "")
+        statusItem.isEnabled = false
+        menu.addItem(statusItem)
+
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(
+            NSMenuItem(title: "Quit OnePass Quick", action: #selector(quit), keyEquivalent: "q")
+        )
+
+        self.statusItem?.menu = menu
+    }
+
+    /// Update the menu bar icon and tooltip to reflect hotkey status.
+    private func updateMenuBarStatus() {
+        let active = hotkeyManager?.isActive ?? false
+
+        if let button = statusItem?.button {
+            button.toolTip = active
+                ? "OnePass Quick -- Cmd+\\ to toggle"
+                : "OnePass Quick -- hotkey inactive (check Accessibility permission)"
+
+            // Dim the icon if the hotkey isn't working
+            button.appearsDisabled = !active
+        }
+
+        rebuildMenu()
+    }
+
+    private func hotkeyStatus() -> String {
+        let active = hotkeyManager?.isActive ?? false
+        return active
+            ? "Hotkey: Cmd+\\ (active)"
+            : "Hotkey: inactive -- grant Accessibility permission and restart"
+    }
+
+    @objc private func quit() {
+        NSApplication.shared.terminate(nil)
+    }
+}
