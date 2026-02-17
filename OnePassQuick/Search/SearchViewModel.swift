@@ -34,6 +34,17 @@ final class SearchViewModel: ObservableObject {
     /// Whether items have been loaded at least once this session.
     private var hasLoaded: Bool = false
 
+    /// When items were last successfully loaded. Used to decide whether
+    /// to background-refresh on panel show.
+    private var lastLoadTime: Date?
+
+    /// Whether a background refresh is in progress. Prevents overlapping
+    /// CLI calls when the panel is shown repeatedly while stale.
+    private var isRefreshing: Bool = false
+
+    /// How long before cached items are considered stale.
+    private static let cacheMaxAge: TimeInterval = 5 * 60  // 5 minutes
+
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Init
@@ -81,29 +92,62 @@ final class SearchViewModel: ObservableObject {
 
     // MARK: - Actions
 
-    /// Load items from the op CLI. Skips if already loaded unless `force` is true.
+    /// Load items from the op CLI.
+    ///
+    /// On first call, shows a loading indicator and fetches items. On
+    /// subsequent calls, returns cached items immediately but triggers a
+    /// background refresh if the cache is stale (> 5 minutes).
     func loadItems(force: Bool = false) {
         guard !isLoading else { return }
-        guard force || !hasLoaded else { return }
 
-        isLoading = true
-        error = nil
+        let isStale = isCacheStale()
 
-        Task {
-            do {
-                let fetchedItems = try await OPClient.listItems()
-                items = fetchedItems
-                hasLoaded = true
-                Self.log.info("Loaded \(fetchedItems.count) items into cache")
-            } catch let opError as OPClientError {
-                error = opError
-                Self.log.error("Failed to load items: \(opError.localizedDescription)")
-            } catch {
-                self.error = .executionFailed(error.localizedDescription)
-                Self.log.error("Unexpected error: \(error.localizedDescription)")
-            }
-            isLoading = false
+        // First load: show loading indicator
+        if !hasLoaded || force {
+            isLoading = true
+            error = nil
+            Task { await fetchItems() }
+            return
         }
+
+        // Background refresh: fetch silently without loading indicator
+        if isStale, !isRefreshing {
+            isRefreshing = true
+            Self.log.info("Cache stale, refreshing in background")
+            Task {
+                await fetchItems()
+                isRefreshing = false
+            }
+        }
+    }
+
+    /// Whether the cached items are older than `cacheMaxAge`.
+    private func isCacheStale() -> Bool {
+        guard let lastLoad = lastLoadTime else { return true }
+        return Date().timeIntervalSince(lastLoad) > Self.cacheMaxAge
+    }
+
+    /// Fetch items from the CLI and update state.
+    private func fetchItems() async {
+        do {
+            let fetchedItems = try await OPClient.listItems()
+            items = fetchedItems
+            hasLoaded = true
+            lastLoadTime = Date()
+            Self.log.info("Loaded \(fetchedItems.count) items into cache")
+        } catch let opError as OPClientError {
+            // Only surface errors on initial load, not background refresh
+            if !hasLoaded { error = opError }
+            Self.log.error(
+                "Failed to load items: \(opError.localizedDescription)"
+            )
+        } catch {
+            if !hasLoaded {
+                self.error = .executionFailed(error.localizedDescription)
+            }
+            Self.log.error("Unexpected error: \(error.localizedDescription)")
+        }
+        isLoading = false
     }
 
     /// Move selection up or down within the filtered results.

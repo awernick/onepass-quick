@@ -1,10 +1,16 @@
 import AppKit
+import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem?
     private var panelController: PanelController?
     private var hotkeyManager: HotkeyManager?
+
+    /// Whether the app is registered to start at login.
+    private var isLoginItemEnabled: Bool {
+        SMAppService.mainApp.status == .enabled
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
@@ -39,6 +45,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(statusItem)
 
         menu.addItem(NSMenuItem.separator())
+
+        let loginItem = NSMenuItem(
+            title: "Start at Login",
+            action: #selector(toggleLoginItem),
+            keyEquivalent: ""
+        )
+        loginItem.target = self
+        switch SMAppService.mainApp.status {
+        case .enabled:
+            loginItem.state = .on
+        case .requiresApproval:
+            loginItem.state = .mixed
+        default:
+            loginItem.state = .off
+        }
+        menu.addItem(loginItem)
+
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(
             NSMenuItem(title: "Quit OnePass Quick", action: #selector(quit), keyEquivalent: "q")
         )
@@ -67,6 +91,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return active
             ? "Hotkey: Cmd+\\ (active)"
             : "Hotkey: inactive -- grant Accessibility permission and restart"
+    }
+
+    @objc private func toggleLoginItem() {
+        do {
+            if isLoginItemEnabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+        } catch {
+            // SMAppService can fail if the app is not in /Applications
+            // or not properly signed. Log but don't crash.
+            NSLog("Failed to toggle login item: \(error)")
+        }
+        rebuildMenu()
     }
 
     @objc private func quit() {
