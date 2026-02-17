@@ -161,7 +161,6 @@ customizable in a future version, but for the MVP they are hardcoded.
 | Tool | Purpose |
 |------|---------|
 | XcodeBuildMCP | Build Xcode projects, parse errors |
-| Playwright MCP | Not applicable (no web UI) |
 
 ## Milestones
 
@@ -215,25 +214,6 @@ feat(search): integrate op CLI item list
 fix(clipboard): auto-clear after 30s not firing
 chore: scaffold Xcode project
 ```
-
-## Scope
-
-### Current (MVP)
-- Global hotkey (`Cmd+\`) to show/hide panel
-- Search 1Password items via `op` CLI
-- Copy username (`Cmd+C`) and password (`Cmd+Shift+C`)
-- Open URL in browser (`Enter`)
-- Open in 1Password app (`Cmd+O`)
-- Concealed clipboard with 30s auto-clear
-- Menu bar icon, no dock icon
-- Dark translucent panel appearance
-
-### Deferred
-- Customizable keyboard shortcuts (settings UI)
-- OTP / one-time password support
-- Multiple vault filtering
-- Favorites / recent items
-- Homebrew cask for distribution
 
 ## Code Style
 
