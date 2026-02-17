@@ -37,6 +37,25 @@ platform :mac do
     sh("open '#{app_path}'")
   end
 
+  desc "Build, sign, and install to /Applications"
+  lane :install do
+    build
+
+    app_path = find_app_path
+    dest = "/Applications/#{APP_NAME}.app"
+
+    # Stop the running app if present
+    sh("pkill -x '#{APP_NAME}' || true")
+    sleep(1)
+
+    # Remove old install and copy fresh build
+    FileUtils.rm_rf(dest)
+    FileUtils.cp_r(app_path, dest)
+    UI.success("Installed to #{dest}")
+
+    sh("open '#{dest}'")
+  end
+
   desc "Clean build artifacts"
   lane :clean do
     xcclean(project: PROJECT, scheme: SCHEME)
