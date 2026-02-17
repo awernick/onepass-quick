@@ -143,6 +143,8 @@ struct SearchView: View {
             return "exclamationmark.triangle.fill"
         case .decodingFailed:
             return "doc.questionmark.fill"
+        case .fieldNotFound:
+            return "questionmark.circle.fill"
         }
     }
 }

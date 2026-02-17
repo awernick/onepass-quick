@@ -1,10 +1,16 @@
 import AppKit
+import os.log
 import SwiftUI
 
 /// Manages the lifecycle, positioning, and keyboard handling of the
 /// quick access panel.
 @MainActor
 final class PanelController: NSObject, NSWindowDelegate {
+
+    private static let log = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "OnePassQuick",
+        category: "PanelController"
+    )
 
     private let panel: QuickAccessPanel
     private let viewModel: SearchViewModel
@@ -19,6 +25,14 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     /// Local key event monitor, active only while the panel is visible.
     private var keyMonitor: Any?
+
+    /// Guards against overlapping async actions (e.g., double Cmd+Shift+C
+    /// while Touch ID is pending).
+    private var isPerformingAction: Bool = false
+
+    /// In-flight password fetch task. Stored so it can be cancelled when
+    /// the panel hides (e.g., user presses Esc during Touch ID).
+    private var actionTask: Task<Void, Never>?
 
     override init() {
         panel = QuickAccessPanel()
@@ -62,6 +76,11 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// panel auto-hides due to `hidesOnDeactivate`.
     private func hide() {
         removeKeyMonitor()
+
+        // Cancel any in-flight credential fetch (e.g., Touch ID pending)
+        actionTask?.cancel()
+        actionTask = nil
+        isPerformingAction = false
 
         if panel.isVisible {
             panel.orderOut(nil)
@@ -131,7 +150,12 @@ final class PanelController: NSObject, NSWindowDelegate {
     }
 
     /// Handle a key event. Returns `nil` to consume, or the event to pass through.
+    ///
+    /// Modifier checks use `intersection` with device-independent flags to
+    /// ignore incidental modifiers (Caps Lock, Fn, etc.).
     private func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
         switch event.keyCode {
         case 53:  // Escape
             hide()
@@ -145,13 +169,119 @@ final class PanelController: NSObject, NSWindowDelegate {
             viewModel.moveSelection(by: -1)
             return nil
 
+        case 8 where flags == [.command, .shift]:  // Cmd+Shift+C
+            copyPassword()
+            return nil
+
+        case 8 where flags == [.command]:  // Cmd+C
+            copyUsername()
+            return nil
+
         case 36:  // Enter/Return
-            // Placeholder for M3 actions (open URL, etc.)
+            openURL()
+            return nil
+
+        case 31 where flags == [.command]:  // Cmd+O
+            openInOnePassword()
             return nil
 
         default:
             return event
         }
+    }
+
+    // MARK: - Actions
+
+    /// Copy the selected item's username to clipboard.
+    ///
+    /// Uses `additionalInformation` from the cached item list — no CLI call,
+    /// no Touch ID.
+    private func copyUsername() {
+        guard let item = viewModel.selectedItem else { return }
+
+        guard let username = item.additionalInformation, !username.isEmpty else {
+            Self.log.info("No username for item '\(item.title)'")
+            NSSound.beep()
+            return
+        }
+
+        ClipboardManager.copy(username, concealed: false)
+        Self.log.info("Copied username for '\(item.title)'")
+        hide()
+    }
+
+    /// Copy the selected item's password to clipboard.
+    ///
+    /// Fetches the password via `op item get` which triggers a Touch ID prompt.
+    /// Panel stays visible during the fetch and hides only on success.
+    private func copyPassword() {
+        guard let item = viewModel.selectedItem else { return }
+        guard !isPerformingAction else { return }
+
+        isPerformingAction = true
+        actionTask = Task {
+            defer { isPerformingAction = false }
+            do {
+                let password = try await OPClient.getField(
+                    itemID: item.id,
+                    field: "password"
+                )
+                guard !Task.isCancelled else { return }
+                ClipboardManager.copy(password, concealed: true)
+                Self.log.info("Copied password for '\(item.title)'")
+                hide()
+            } catch OPClientError.fieldNotFound {
+                Self.log.info("No password for item '\(item.title)'")
+                NSSound.beep()
+            } catch OPClientError.notAuthenticated {
+                Self.log.info("Auth cancelled for '\(item.title)'")
+                // User cancelled Touch ID — panel stays open, no-op
+            } catch {
+                guard !Task.isCancelled else { return }
+                Self.log.error("Failed to fetch password: \(error)")
+                NSSound.beep()
+            }
+        }
+    }
+
+    /// Open the selected item's primary URL in the default browser.
+    ///
+    /// Uses the cached URL from the item list — no CLI call.
+    private func openURL() {
+        guard let item = viewModel.selectedItem else { return }
+
+        guard let urlString = item.primaryURL,
+              let url = URL(string: urlString)
+        else {
+            Self.log.info("No URL for item '\(item.title)'")
+            NSSound.beep()
+            return
+        }
+
+        NSWorkspace.shared.open(url)
+        Self.log.info("Opened URL for '\(item.title)'")
+        hide()
+    }
+
+    /// Open the 1Password desktop app.
+    ///
+    /// 1Password 8 does not support deep linking to specific items via
+    /// URL scheme (known limitation). This just activates the app so the
+    /// user can find the item there. A future improvement could use
+    /// Private Links if we fetch the account UUID.
+    private func openInOnePassword() {
+        guard viewModel.selectedItem != nil else { return }
+
+        if let url = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: "com.1password.1password"
+        ) {
+            NSWorkspace.shared.open(url)
+            Self.log.info("Opened 1Password app")
+        } else {
+            Self.log.error("1Password app not found")
+            NSSound.beep()
+        }
+        hide()
     }
 
     // MARK: - Positioning

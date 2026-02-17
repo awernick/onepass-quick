@@ -11,6 +11,8 @@ enum OPClientError: Error, Equatable {
     case executionFailed(String)
     /// JSON decoding of CLI output failed.
     case decodingFailed(String)
+    /// The requested field does not exist on the item.
+    case fieldNotFound(String)
 
     var localizedDescription: String {
         switch self {
@@ -22,6 +24,8 @@ enum OPClientError: Error, Equatable {
             return "CLI error: \(detail)"
         case .decodingFailed(let detail):
             return "Failed to parse items: \(detail)"
+        case .fieldNotFound(let detail):
+            return "Field not found: \(detail)"
         }
     }
 }
@@ -83,6 +87,71 @@ enum OPClient {
             let items = try decoder.decode([Item].self, from: data)
             log.info("Loaded \(items.count) items")
             return items
+        } catch {
+            log.error("JSON decode failed: \(error.localizedDescription)")
+            throw OPClientError.decodingFailed(error.localizedDescription)
+        }
+    }
+
+    /// Fetch a single field value from a 1Password item.
+    ///
+    /// Calls `op item get <id> --fields <field> --format json --cache`.
+    /// Returns the field's `value` string directly.
+    ///
+    /// - Note: This triggers a Touch ID prompt via the 1Password desktop
+    ///   app on every call (CLI sessions are per-tty, and `Process` has
+    ///   no tty).
+    static func getField(
+        itemID: String,
+        field: String
+    ) async throws -> String {
+        let opPath = try resolveOPPath()
+        log.info("Fetching field '\(field)' for item \(itemID)")
+
+        // Note: --cache intentionally omitted. The op CLI cache may
+        // persist field values to disk, violating the "never store
+        // credentials on disk" rule.
+        let arguments = [
+            "item", "get", itemID,
+            "--fields", field,
+            "--format", "json",
+        ]
+        let (stdout, stderr, exitCode) = try await runProcess(
+            executablePath: opPath,
+            arguments: arguments
+        )
+
+        if exitCode != 0 {
+            let stderrTrimmed = stderr.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            let errorOutput = stderrTrimmed.isEmpty
+                ? stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+                : stderrTrimmed
+
+            log.error(
+                "op item get failed (exit \(exitCode)): \(errorOutput)"
+            )
+
+            if isAuthenticationError(errorOutput) {
+                throw OPClientError.notAuthenticated(errorOutput)
+            }
+            if isFieldNotFoundError(errorOutput) {
+                throw OPClientError.fieldNotFound(field)
+            }
+            throw OPClientError.executionFailed(errorOutput)
+        }
+
+        guard let data = stdout.data(using: .utf8) else {
+            throw OPClientError.decodingFailed("Empty or invalid output")
+        }
+
+        do {
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            let itemField = try decoder.decode(ItemField.self, from: data)
+            log.info("Fetched field '\(field)' successfully")
+            return itemField.value
         } catch {
             log.error("JSON decode failed: \(error.localizedDescription)")
             throw OPClientError.decodingFailed(error.localizedDescription)
@@ -221,6 +290,13 @@ enum OPClient {
         ]
         let lowered = message.lowercased()
         return patterns.contains { lowered.contains($0) }
+    }
+
+    /// Check if the CLI error indicates a missing field on the item.
+    ///
+    /// The CLI outputs: `"username" isn't a field in the "..." item`
+    private static func isFieldNotFoundError(_ message: String) -> Bool {
+        message.contains("isn't a field in the")
     }
 }
 

@@ -52,3 +52,14 @@ struct ItemURL: Codable, Hashable {
     let primary: Bool?
     let href: String
 }
+
+/// A single field from `op item get --fields ... --format json`.
+///
+/// Used to decode credential values fetched on-demand. The CLI returns
+/// an object per field with at least these properties.
+struct ItemField: Codable {
+    let id: String
+    let label: String
+    let value: String
+    let type: String
+}
