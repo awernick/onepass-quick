@@ -37,9 +37,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         COMBINE_HIDPI_IMAGES: true
         CODE_SIGN_STYLE: Manual
-        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_IDENTITY: "Apple Development"
         CODE_SIGN_ENTITLEMENTS: OnePassQuick/Resources/OnePassQuick.entitlements
-        # Note: The built binary is ad-hoc signed. Run the post-build
-        # re-sign step (see AGENTS.md build instructions) to get a stable
-        # signature for Accessibility permissions.
+        DEVELOPMENT_TEAM: 9A3C3KAB5A
         ENABLE_HARDENED_RUNTIME: true

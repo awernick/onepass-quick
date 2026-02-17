@@ -3,7 +3,6 @@ default_platform(:mac)
 APP_NAME = "OnePassQuick"
 PROJECT = "#{APP_NAME}.xcodeproj"
 SCHEME = APP_NAME
-SIGN_IDENTITY = "Apple Development"
 
 platform :mac do
   desc "Generate Xcode project from project.yml"
@@ -11,24 +10,24 @@ platform :mac do
     sh("cd .. && xcodegen generate")
   end
 
-  desc "Build and sign the app for development"
+  desc "Build and sign the app"
   lane :build do
     generate
 
+    # Let Xcode handle signing directly with the Apple Development
+    # certificate (set in project.yml). No ad-hoc + re-sign — that
+    # two-step process can leave stale metadata that prevents macOS
+    # from persisting TCC permissions.
     xcodebuild(
       project: PROJECT,
       scheme: SCHEME,
       configuration: "Debug",
       build: true,
-      xcargs: "CODE_SIGN_IDENTITY='-'"
     )
 
     app_path = find_app_path
     UI.user_error!("Could not find built app in DerivedData") unless app_path
-
-    entitlements = File.expand_path("../OnePassQuick/Resources/OnePassQuick.entitlements")
-    sh("codesign -f -s '#{SIGN_IDENTITY}' --deep --options runtime --entitlements '#{entitlements}' '#{app_path}'")
-    UI.success("Signed: #{app_path}")
+    UI.success("Built: #{app_path}")
   end
 
   desc "Build, sign, and launch the app"
