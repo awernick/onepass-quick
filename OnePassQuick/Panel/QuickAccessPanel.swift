@@ -75,4 +75,27 @@ final class QuickAccessPanel: NSPanel {
 
     /// Allow the panel to become the key window for keyboard input.
     override var canBecomeKey: Bool { true }
+
+    /// Intercept key equivalents (Cmd+C, Cmd+Shift+C, Cmd+O) before they
+    /// reach the field editor's responder chain, which would otherwise
+    /// beep when the field editor can't handle the action (e.g., copy
+    /// with no selection). Returning `true` claims the event was handled,
+    /// preventing the cascade. The actual action is handled by the local
+    /// `.keyDown` monitor in `PanelController`.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(
+            .deviceIndependentFlagsMask
+        )
+
+        switch event.keyCode {
+        case 8 where flags == [.command, .shift]:  // Cmd+Shift+C
+            return true
+        case 8 where flags == [.command]:           // Cmd+C
+            return true
+        case 31 where flags == [.command]:           // Cmd+O
+            return true
+        default:
+            return super.performKeyEquivalent(with: event)
+        }
+    }
 }

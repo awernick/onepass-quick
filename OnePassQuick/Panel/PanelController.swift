@@ -201,7 +201,6 @@ final class PanelController: NSObject, NSWindowDelegate {
 
         guard let username = item.additionalInformation, !username.isEmpty else {
             Self.log.info("No username for item '\(item.title)'")
-            NSSound.beep()
             return
         }
 
@@ -232,14 +231,12 @@ final class PanelController: NSObject, NSWindowDelegate {
                 hide()
             } catch OPClientError.fieldNotFound {
                 Self.log.info("No password for item '\(item.title)'")
-                NSSound.beep()
             } catch OPClientError.notAuthenticated {
                 Self.log.info("Auth cancelled for '\(item.title)'")
                 // User cancelled Touch ID — panel stays open, no-op
             } catch {
                 guard !Task.isCancelled else { return }
                 Self.log.error("Failed to fetch password: \(error)")
-                NSSound.beep()
             }
         }
     }
@@ -254,7 +251,6 @@ final class PanelController: NSObject, NSWindowDelegate {
               let url = URL(string: urlString)
         else {
             Self.log.info("No URL for item '\(item.title)'")
-            NSSound.beep()
             return
         }
 
@@ -279,7 +275,6 @@ final class PanelController: NSObject, NSWindowDelegate {
             Self.log.info("Opened 1Password app")
         } else {
             Self.log.error("1Password app not found")
-            NSSound.beep()
         }
         hide()
     }
