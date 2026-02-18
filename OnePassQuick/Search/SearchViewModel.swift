@@ -39,6 +39,13 @@ final class SearchViewModel: ObservableObject {
     /// once when `query` or `items` change, not on every access.
     @Published private(set) var filteredResults: [SearchResult] = []
 
+    /// Brief feedback message shown after an action (e.g. "Password copied").
+    /// Non-nil while the toast is visible.
+    @Published var toastMessage: String?
+
+    /// SF Symbol name for the toast icon.
+    @Published var toastIcon: String?
+
     // MARK: - Private State
 
     /// Full item list from the last successful `op item list` call.
@@ -217,5 +224,7 @@ final class SearchViewModel: ObservableObject {
         query = ""
         selectedIndex = 0
         error = nil
+        toastMessage = nil
+        toastIcon = nil
     }
 }

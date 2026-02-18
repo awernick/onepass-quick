@@ -34,6 +34,13 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// the panel hides (e.g., user presses Esc during Touch ID).
     private var actionTask: Task<Void, Never>?
 
+    /// Pending hide after toast display. Cancelled if the user dismisses
+    /// manually (Esc) before the delay expires.
+    private var toastHideTask: Task<Void, Never>?
+
+    /// Duration the toast is visible before the panel auto-hides.
+    private static let toastDuration: UInt64 = 500_000_000  // 0.5s
+
     override init() {
         panel = QuickAccessPanel()
         viewModel = SearchViewModel()
@@ -81,6 +88,10 @@ final class PanelController: NSObject, NSWindowDelegate {
         actionTask?.cancel()
         actionTask = nil
         isPerformingAction = false
+
+        // Cancel pending toast-delayed hide
+        toastHideTask?.cancel()
+        toastHideTask = nil
 
         if panel.isVisible {
             panel.orderOut(nil)
@@ -193,6 +204,26 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     // MARK: - Actions
 
+    /// Show a toast message in the panel, then hide after a short delay.
+    ///
+    /// The toast replaces the results area with an icon + message. If the
+    /// user dismisses manually (Esc) before the delay, `hide()` cancels
+    /// the pending task.
+    private func showToastThenHide(
+        _ message: String,
+        icon: String = "checkmark.circle.fill"
+    ) {
+        viewModel.toastMessage = message
+        viewModel.toastIcon = icon
+
+        toastHideTask?.cancel()
+        toastHideTask = Task {
+            try? await Task.sleep(nanoseconds: Self.toastDuration)
+            guard !Task.isCancelled else { return }
+            hide()
+        }
+    }
+
     /// Copy the selected item's username to clipboard.
     ///
     /// Uses `additionalInformation` from the cached item list — no CLI call,
@@ -207,7 +238,7 @@ final class PanelController: NSObject, NSWindowDelegate {
 
         ClipboardManager.copy(username, concealed: false)
         Self.log.info("Copied username for '\(item.title)'")
-        hide()
+        showToastThenHide("Username copied")
     }
 
     /// Copy the selected item's password to clipboard.
@@ -217,6 +248,10 @@ final class PanelController: NSObject, NSWindowDelegate {
     private func copyPassword() {
         guard let item = viewModel.selectedItem else { return }
         guard !isPerformingAction else { return }
+
+        // Show immediate feedback while the CLI fetches the password
+        viewModel.toastMessage = "Fetching password\u{2026}"
+        viewModel.toastIcon = "ellipsis.circle"
 
         isPerformingAction = true
         actionTask = Task {
@@ -229,15 +264,21 @@ final class PanelController: NSObject, NSWindowDelegate {
                 guard !Task.isCancelled else { return }
                 ClipboardManager.copy(password, concealed: true)
                 Self.log.info("Copied password for '\(item.title)'")
-                hide()
+                showToastThenHide("Password copied")
             } catch OPClientError.fieldNotFound {
                 Self.log.info("No password for item '\(item.title)'")
+                viewModel.toastMessage = nil
+                viewModel.toastIcon = nil
             } catch OPClientError.notAuthenticated {
                 Self.log.info("Auth cancelled for '\(item.title)'")
                 // User cancelled Touch ID — panel stays open, no-op
+                viewModel.toastMessage = nil
+                viewModel.toastIcon = nil
             } catch {
                 guard !Task.isCancelled else { return }
                 Self.log.error("Failed to fetch password: \(error)")
+                viewModel.toastMessage = nil
+                viewModel.toastIcon = nil
             }
         }
     }
@@ -248,16 +289,24 @@ final class PanelController: NSObject, NSWindowDelegate {
     private func openURL() {
         guard let item = viewModel.selectedItem else { return }
 
-        guard let urlString = item.primaryURL,
-              let url = URL(string: urlString)
-        else {
+        guard let urlString = item.primaryURL else {
             Self.log.info("No URL for item '\(item.title)'")
+            return
+        }
+
+        // Ensure URL has a scheme — op CLI may return bare hostnames
+        let normalized = urlString.hasPrefix("http://")
+            || urlString.hasPrefix("https://")
+            ? urlString : "https://\(urlString)"
+
+        guard let url = URL(string: normalized) else {
+            Self.log.info("Invalid URL for item '\(item.title)'")
             return
         }
 
         NSWorkspace.shared.open(url)
         Self.log.info("Opened URL for '\(item.title)'")
-        hide()
+        showToastThenHide("Opening URL\u{2026}", icon: "arrow.up.forward")
     }
 
     /// Open the 1Password desktop app.
@@ -277,7 +326,10 @@ final class PanelController: NSObject, NSWindowDelegate {
         } else {
             Self.log.error("1Password app not found")
         }
-        hide()
+        showToastThenHide(
+            "Opening 1Password\u{2026}",
+            icon: "arrow.up.forward"
+        )
     }
 
     // MARK: - Positioning

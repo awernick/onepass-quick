@@ -16,7 +16,19 @@ struct SearchView: View {
             searchFieldSection
             Divider()
                 .background(.white.opacity(0.1))
-            resultsSection
+            ZStack {
+                resultsSection
+                    .opacity(viewModel.toastMessage == nil ? 1 : 0)
+
+                if let message = viewModel.toastMessage {
+                    toastView(
+                        message: message,
+                        icon: viewModel.toastIcon ?? "checkmark.circle.fill"
+                    )
+                    .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.15), value: viewModel.toastMessage)
             Divider()
                 .background(.white.opacity(0.1))
             ShortcutHintsBar()
@@ -120,6 +132,20 @@ struct SearchView: View {
             Text(emptyMessage)
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Toast
+
+    private func toastView(message: String, icon: String) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 32, weight: .light))
+                .foregroundStyle(.white)
+            Text(message)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white.opacity(0.8))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
