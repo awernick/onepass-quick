@@ -35,6 +35,10 @@ final class SearchViewModel: ObservableObject {
     /// Error from the most recent load attempt, if any.
     @Published var error: OPClientError?
 
+    /// Items filtered and scored by the current query. Recalculated
+    /// once when `query` or `items` change, not on every access.
+    @Published private(set) var filteredResults: [SearchResult] = []
+
     // MARK: - Private State
 
     /// Full item list from the last successful `op item list` call.
@@ -59,11 +63,13 @@ final class SearchViewModel: ObservableObject {
     // MARK: - Init
 
     init() {
-        // Reset selection to top whenever the query changes
-        $query
-            .dropFirst()
-            .sink { [weak self] _ in
-                self?.selectedIndex = 0
+        // Recalculate filtered results when query or items change,
+        // and reset selection to top.
+        Publishers.CombineLatest($query, $items)
+            .sink { [weak self] _, _ in
+                guard let self else { return }
+                self.selectedIndex = 0
+                self.filteredResults = self.computeFilteredResults()
             }
             .store(in: &cancellables)
     }
@@ -78,10 +84,9 @@ final class SearchViewModel: ObservableObject {
     private static let usernameBonus: Double = 500.0
     private static let urlBonus: Double = 0.0
 
-    /// Items filtered by the current query using fuzzy matching,
-    /// sorted by field priority then match quality.
-    /// Returns all items (with empty positions) when query is empty.
-    var filteredResults: [SearchResult] {
+    /// Compute filtered results from the current query and items.
+    /// Called once per query/items change via Combine, not per access.
+    private func computeFilteredResults() -> [SearchResult] {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
             return items.map { SearchResult(item: $0, titlePositions: []) }
