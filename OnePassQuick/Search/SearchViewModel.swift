@@ -61,32 +61,48 @@ final class SearchViewModel: ObservableObject {
 
     // MARK: - Computed
 
-    /// Items filtered by the current query, sorted by relevance.
+    /// Field-priority bonuses added to fuzzy scores so that title
+    /// matches always rank above username matches, which rank above
+    /// URL matches. The bonus values are large enough to dominate
+    /// any realistic fuzzy score.
+    private static let titleBonus: Double = 1000.0
+    private static let usernameBonus: Double = 500.0
+    private static let urlBonus: Double = 0.0
+
+    /// Items filtered by the current query using fuzzy matching,
+    /// sorted by field priority then match quality.
     /// Returns all items when query is empty.
     var filteredItems: [Item] {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return items }
 
-        let lowered = trimmed.lowercased()
         return items
-            .compactMap { item -> (item: Item, rank: Int)? in
-                let title = item.title.lowercased()
-                if title.hasPrefix(lowered) {
-                    return (item, 0)
-                } else if title.contains(lowered) {
-                    return (item, 1)
-                } else if item.additionalInformation?.lowercased()
-                    .contains(lowered) ?? false
+            .compactMap { item -> (item: Item, score: Double)? in
+                // Title match (highest priority)
+                if let m = FuzzyMatcher.match(
+                    query: trimmed, candidate: item.title
+                ) {
+                    return (item, Self.titleBonus + m.score)
+                }
+                // Username / additional info match
+                if let info = item.additionalInformation,
+                    let m = FuzzyMatcher.match(
+                        query: trimmed, candidate: info
+                    )
                 {
-                    return (item, 2)
-                } else if item.primaryURL?.lowercased()
-                    .contains(lowered) ?? false
+                    return (item, Self.usernameBonus + m.score)
+                }
+                // URL match
+                if let url = item.primaryURL,
+                    let m = FuzzyMatcher.match(
+                        query: trimmed, candidate: url
+                    )
                 {
-                    return (item, 3)
+                    return (item, Self.urlBonus + m.score)
                 }
                 return nil
             }
-            .sorted { $0.rank < $1.rank }
+            .sorted { $0.score > $1.score }
             .map(\.item)
     }
 
