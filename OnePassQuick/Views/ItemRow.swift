@@ -139,3 +139,83 @@ struct ItemRow: View {
     .frame(width: 640)
     .background(.black.opacity(0.8))
 }
+
+#Preview("API Credential") {
+    ItemRow(
+        item: Item(
+            id: "api001",
+            title: "Stripe API Key",
+            category: "API_CREDENTIAL",
+            vault: Vault(id: "v2", name: "Work"),
+            additionalInformation: "sk_live_*****",
+            urls: nil
+        ),
+        isSelected: false
+    )
+    .frame(width: 640)
+    .background(.black.opacity(0.8))
+}
+
+#Preview("SSH Key") {
+    ItemRow(
+        item: Item(
+            id: "ssh001",
+            title: "deploy@prod-server",
+            category: "SSH_KEY",
+            vault: Vault(id: "v2", name: "Work"),
+            additionalInformation: nil,
+            urls: nil
+        ),
+        isSelected: false
+    )
+    .frame(width: 640)
+    .background(.black.opacity(0.8))
+}
+
+#Preview("Server") {
+    ItemRow(
+        item: Item(
+            id: "srv001",
+            title: "Production Database",
+            category: "SERVER",
+            vault: Vault(id: "v2", name: "Work"),
+            additionalInformation: "db.example.com",
+            urls: nil
+        ),
+        isSelected: false
+    )
+    .frame(width: 640)
+    .background(.black.opacity(0.8))
+}
+
+#Preview("Credit Card") {
+    ItemRow(
+        item: Item(
+            id: "cc001",
+            title: "Chase Sapphire",
+            category: "CREDIT_CARD",
+            vault: Vault(id: "v1", name: "Personal"),
+            additionalInformation: nil,
+            urls: nil
+        ),
+        isSelected: false
+    )
+    .frame(width: 640)
+    .background(.black.opacity(0.8))
+}
+
+#Preview("Software License") {
+    ItemRow(
+        item: Item(
+            id: "sw001",
+            title: "JetBrains All Products",
+            category: "SOFTWARE_LICENSE",
+            vault: Vault(id: "v2", name: "Work"),
+            additionalInformation: nil,
+            urls: nil
+        ),
+        isSelected: false
+    )
+    .frame(width: 640)
+    .background(.black.opacity(0.8))
+}

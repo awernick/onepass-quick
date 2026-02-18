@@ -22,11 +22,11 @@ struct Item: Codable, Identifiable, Hashable {
     var categoryIcon: String {
         switch category {
         case "LOGIN":
-            return "person.fill"
+            return "person.crop.circle.fill"
         case "PASSWORD":
             return "key.fill"
         case "SECURE_NOTE":
-            return "doc.text.fill"
+            return "note.text"
         case "CREDIT_CARD":
             return "creditcard.fill"
         case "IDENTITY":
@@ -34,9 +34,35 @@ struct Item: Codable, Identifiable, Hashable {
         case "API_CREDENTIAL":
             return "terminal.fill"
         case "SSH_KEY":
-            return "lock.shield.fill"
+            return "key.horizontal.fill"
+        case "BANK_ACCOUNT":
+            return "building.columns.fill"
+        case "DATABASE":
+            return "cylinder.fill"
+        case "DOCUMENT":
+            return "doc.fill"
+        case "DRIVER_LICENSE":
+            return "car.fill"
+        case "EMAIL_ACCOUNT":
+            return "envelope.fill"
+        case "MEMBERSHIP":
+            return "person.crop.rectangle.fill"
+        case "OUTDOOR_LICENSE":
+            return "leaf.fill"
+        case "PASSPORT":
+            return "airplane"
+        case "REWARD_PROGRAM":
+            return "star.fill"
+        case "SERVER":
+            return "server.rack"
+        case "SOCIAL_SECURITY_NUMBER":
+            return "shield.fill"
+        case "SOFTWARE_LICENSE":
+            return "app.badge.checkmark"
+        case "WIRELESS_ROUTER":
+            return "wifi"
         default:
-            return "globe"
+            return "ellipsis.circle.fill"
         }
     }
 }
