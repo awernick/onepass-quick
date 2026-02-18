@@ -49,7 +49,7 @@ struct SearchView: View {
             loadingView
         } else if let error = viewModel.error {
             errorView(error)
-        } else if viewModel.filteredItems.isEmpty {
+        } else if viewModel.filteredResults.isEmpty {
             emptyView
         } else {
             resultsList
@@ -61,27 +61,25 @@ struct SearchView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(
-                        Array(viewModel.filteredItems.enumerated()),
-                        id: \.element.id
-                    ) { index, item in
+                        Array(viewModel.filteredResults.enumerated()),
+                        id: \.element.item.id
+                    ) { index, result in
                         ItemRow(
-                            item: item,
-                            isSelected: index == viewModel.selectedIndex
+                            item: result.item,
+                            isSelected: index == viewModel.selectedIndex,
+                            titlePositions: result.titlePositions
                         )
-                        .id(item.id)
+                        .id(result.item.id)
                     }
                 }
                 .padding(.vertical, 4)
             }
             .onChange(of: viewModel.selectedIndex) { _, newIndex in
-                guard newIndex >= 0,
-                      newIndex < viewModel.filteredItems.count
+                let results = viewModel.filteredResults
+                guard newIndex >= 0, newIndex < results.count
                 else { return }
                 withAnimation(.easeOut(duration: 0.1)) {
-                    proxy.scrollTo(
-                        viewModel.filteredItems[newIndex].id,
-                        anchor: .center
-                    )
+                    proxy.scrollTo(results[newIndex].item.id, anchor: .center)
                 }
             }
         }

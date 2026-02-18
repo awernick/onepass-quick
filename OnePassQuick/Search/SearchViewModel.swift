@@ -2,6 +2,15 @@ import Combine
 import Foundation
 import os.log
 
+/// A filtered item paired with its fuzzy match positions in the title.
+struct SearchResult {
+    let item: Item
+
+    /// Character indices in the title where query characters matched.
+    /// Empty when the query is empty or the match was on a non-title field.
+    let titlePositions: [Int]
+}
+
 /// Centralizes all search UI state. Owned by `PanelController` and
 /// passed to `SearchView` as `@ObservedObject`.
 @MainActor
@@ -71,18 +80,23 @@ final class SearchViewModel: ObservableObject {
 
     /// Items filtered by the current query using fuzzy matching,
     /// sorted by field priority then match quality.
-    /// Returns all items when query is empty.
-    var filteredItems: [Item] {
+    /// Returns all items (with empty positions) when query is empty.
+    var filteredResults: [SearchResult] {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return items }
+        guard !trimmed.isEmpty else {
+            return items.map { SearchResult(item: $0, titlePositions: []) }
+        }
 
         return items
-            .compactMap { item -> (item: Item, score: Double)? in
+            .compactMap { item -> (result: SearchResult, score: Double)? in
                 // Title match (highest priority)
                 if let m = FuzzyMatcher.match(
                     query: trimmed, candidate: item.title
                 ) {
-                    return (item, Self.titleBonus + m.score)
+                    let result = SearchResult(
+                        item: item, titlePositions: m.positions
+                    )
+                    return (result, Self.titleBonus + m.score)
                 }
                 // Username / additional info match
                 if let info = item.additionalInformation,
@@ -90,7 +104,10 @@ final class SearchViewModel: ObservableObject {
                         query: trimmed, candidate: info
                     )
                 {
-                    return (item, Self.usernameBonus + m.score)
+                    let result = SearchResult(
+                        item: item, titlePositions: []
+                    )
+                    return (result, Self.usernameBonus + m.score)
                 }
                 // URL match
                 if let url = item.primaryURL,
@@ -98,12 +115,15 @@ final class SearchViewModel: ObservableObject {
                         query: trimmed, candidate: url
                     )
                 {
-                    return (item, Self.urlBonus + m.score)
+                    let result = SearchResult(
+                        item: item, titlePositions: []
+                    )
+                    return (result, Self.urlBonus + m.score)
                 }
                 return nil
             }
             .sorted { $0.score > $1.score }
-            .map(\.item)
+            .map(\.result)
     }
 
     // MARK: - Actions
@@ -170,7 +190,7 @@ final class SearchViewModel: ObservableObject {
     ///
     /// - Parameter delta: Positive moves down, negative moves up.
     func moveSelection(by delta: Int) {
-        let count = filteredItems.count
+        let count = filteredResults.count
         guard count > 0 else { return }
 
         let newIndex = selectedIndex + delta
@@ -179,9 +199,11 @@ final class SearchViewModel: ObservableObject {
 
     /// The currently selected item, if any.
     var selectedItem: Item? {
-        let items = filteredItems
-        guard selectedIndex >= 0, selectedIndex < items.count else { return nil }
-        return items[selectedIndex]
+        let results = filteredResults
+        guard selectedIndex >= 0, selectedIndex < results.count else {
+            return nil
+        }
+        return results[selectedIndex].item
     }
 
     /// Reset state for the next panel show. Clears query and selection
