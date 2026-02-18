@@ -54,7 +54,7 @@ enum OPClient {
     /// Uses `--cache` to leverage op's built-in caching.
     /// Authentication is handled by the 1Password desktop app via biometric.
     static func listItems() async throws -> [Item] {
-        let opPath = try resolveOPPath()
+        let opPath = try await resolveOPPath()
         log.info("Listing items via \(opPath)")
 
         let arguments = ["item", "list", "--format", "json", "--cache"]
@@ -98,7 +98,7 @@ enum OPClient {
     /// Calls `op account list --format json` and returns the first
     /// account. Used to construct Private Link URLs for deep linking.
     static func getAccount() async throws -> OPAccount {
-        let opPath = try resolveOPPath()
+        let opPath = try await resolveOPPath()
         log.info("Fetching account info via \(opPath)")
 
         let arguments = ["account", "list", "--format", "json"]
@@ -159,7 +159,7 @@ enum OPClient {
         itemID: String,
         field: String
     ) async throws -> String {
-        let opPath = try resolveOPPath()
+        let opPath = try await resolveOPPath()
         log.info("Fetching field '\(field)' for item \(itemID)")
 
         // Note: --cache intentionally omitted. The op CLI cache may
@@ -295,7 +295,10 @@ enum OPClient {
     // MARK: - Path Resolution
 
     /// Find the `op` binary, checking known Homebrew paths first.
-    private static func resolveOPPath() throws -> String {
+    ///
+    /// The `which` fallback runs asynchronously via `runProcess` to avoid
+    /// blocking the main thread when `op` isn't in a known Homebrew path.
+    private static func resolveOPPath() async throws -> String {
         for path in knownPaths {
             if FileManager.default.isExecutableFile(atPath: path) {
                 return path
@@ -303,25 +306,21 @@ enum OPClient {
         }
 
         // Fall back to `which op` for non-standard installations
-        let whichProcess = Process()
-        whichProcess.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        whichProcess.arguments = ["op"]
-
-        let pipe = Pipe()
-        whichProcess.standardOutput = pipe
-
         do {
-            try whichProcess.run()
-            whichProcess.waitUntilExit()
+            let (stdout, _, exitCode) = try await runProcess(
+                executablePath: "/usr/bin/which",
+                arguments: ["op"]
+            )
 
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let path = String(data: data, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-            if !path.isEmpty
-                && FileManager.default.isExecutableFile(atPath: path)
-            {
-                return path
+            if exitCode == 0 {
+                let path = stdout.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
+                if !path.isEmpty,
+                    FileManager.default.isExecutableFile(atPath: path)
+                {
+                    return path
+                }
             }
         } catch {
             log.warning("which op failed: \(error.localizedDescription)")
