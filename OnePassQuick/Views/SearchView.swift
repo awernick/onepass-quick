@@ -31,7 +31,7 @@ struct SearchView: View {
             .animation(.easeInOut(duration: 0.15), value: viewModel.toastMessage)
             Divider()
                 .background(.white.opacity(0.1))
-            ShortcutHintsBar()
+            ShortcutHintsBar(category: viewModel.selectedItem?.category)
         }
     }
 

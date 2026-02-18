@@ -64,89 +64,99 @@ final class ActionHandler {
 
     // MARK: - Actions
 
-    /// Copy the selected item's username to clipboard.
+    /// Copy the primary field (Cmd+C) for the selected item.
     ///
-    /// Uses `additionalInformation` from the cached item list -- no CLI call,
-    /// no Touch ID.
-    func copyUsername() {
+    /// The actual field depends on the item's category (e.g. username
+    /// for LOGIN, card number for CREDIT_CARD). See `CategoryActions`.
+    func copyPrimary() {
         guard let item = viewModel.selectedItem else { return }
-
-        guard let username = item.additionalInformation,
-            !username.isEmpty
-        else {
-            Self.log.info("No username for item '\(item.title)'")
-            return
-        }
-
-        ClipboardManager.copy(username, concealed: false)
-        Self.log.info("Copied username for '\(item.title)'")
-        showToastThenDismiss("Username copied")
+        guard let action = item.categoryActions.primary else { return }
+        performAction(action, for: item)
     }
 
-    /// Copy the selected item's password to clipboard.
+    /// Copy the secret field (Cmd+Shift+C) for the selected item.
     ///
-    /// Fetches the password via `op item get` which triggers a Touch ID prompt.
-    /// Panel stays visible during the fetch and hides only on success.
-    func copyPassword() {
+    /// The actual field depends on the item's category (e.g. password
+    /// for LOGIN, CVV for CREDIT_CARD). See `CategoryActions`.
+    func copySecret() {
         guard let item = viewModel.selectedItem else { return }
-        guard !isPerformingAction else { return }
+        guard let action = item.categoryActions.secret else { return }
+        performAction(action, for: item)
+    }
 
-        // Show immediate feedback while the CLI fetches the password
-        viewModel.toastMessage = "Fetching password\u{2026}"
-        viewModel.toastIcon = "ellipsis.circle"
+    /// Copy the tertiary field (Cmd+Option+C) for the selected item.
+    ///
+    /// The actual field depends on the item's category (e.g. OTP
+    /// for LOGIN, expiry for CREDIT_CARD). See `CategoryActions`.
+    func copyTertiary() {
+        guard let item = viewModel.selectedItem else { return }
+        guard let action = item.categoryActions.tertiary else { return }
+        performAction(action, for: item)
+    }
 
-        isPerformingAction = true
-        actionTask = Task {
-            defer { isPerformingAction = false }
-            do {
-                let password = try await OPClient.getField(
-                    itemID: item.id,
-                    field: "password"
-                )
-                guard !Task.isCancelled else { return }
-                ClipboardManager.copy(password, concealed: true)
-                Self.log.info("Copied password for '\(item.title)'")
-                showToastThenDismiss("Password copied")
-            } catch OPClientError.fieldNotFound {
-                Self.log.info("No password for item '\(item.title)'")
-                viewModel.toastMessage = nil
-                viewModel.toastIcon = nil
-            } catch OPClientError.notAuthenticated {
-                Self.log.info("Auth cancelled for '\(item.title)'")
-                // User cancelled Touch ID -- panel stays open, no-op
-                viewModel.toastMessage = nil
-                viewModel.toastIcon = nil
-            } catch {
-                guard !Task.isCancelled else { return }
-                Self.log.error("Failed to fetch password: \(error)")
-                viewModel.toastMessage = nil
-                viewModel.toastIcon = nil
+    /// Execute a copy action, resolving the value from the appropriate source.
+    private func performAction(
+        _ action: CategoryActions.Action,
+        for item: Item
+    ) {
+        switch action.source {
+        case .additionalInfo:
+            guard let value = item.additionalInformation,
+                !value.isEmpty
+            else {
+                Self.log.info("No \(action.label) for item '\(item.title)'")
+                return
+            }
+            ClipboardManager.copy(value, concealed: action.concealed)
+            Self.log.info("Copied \(action.label) for '\(item.title)'")
+            showToastThenDismiss("\(action.label) copied")
+
+        case .field(let fieldID):
+            fetchAndCopy(
+                item: item,
+                label: action.label,
+                concealed: action.concealed
+            ) {
+                try await OPClient.getField(itemID: item.id, field: fieldID)
+            }
+
+        case .otp:
+            fetchAndCopy(
+                item: item,
+                label: action.label,
+                concealed: action.concealed
+            ) {
+                try await OPClient.getOTP(itemID: item.id)
             }
         }
     }
 
-    /// Copy the selected item's one-time password (TOTP) to clipboard.
+    /// Fetch a value asynchronously (triggers Touch ID) and copy to clipboard.
     ///
-    /// Fetches the current code via `op item get --otp` which triggers
-    /// a Touch ID prompt. Same async pattern as `copyPassword`.
-    func copyOTP() {
-        guard let item = viewModel.selectedItem else { return }
+    /// Shows a "Fetching..." toast during the fetch and handles errors
+    /// (field not found, auth cancelled, timeout) gracefully.
+    private func fetchAndCopy(
+        item: Item,
+        label: String,
+        concealed: Bool,
+        fetch: @escaping () async throws -> String
+    ) {
         guard !isPerformingAction else { return }
 
-        viewModel.toastMessage = "Fetching one-time password\u{2026}"
+        viewModel.toastMessage = "Fetching \(label.lowercased())\u{2026}"
         viewModel.toastIcon = "ellipsis.circle"
 
         isPerformingAction = true
         actionTask = Task {
             defer { isPerformingAction = false }
             do {
-                let otp = try await OPClient.getOTP(itemID: item.id)
+                let value = try await fetch()
                 guard !Task.isCancelled else { return }
-                ClipboardManager.copy(otp, concealed: true)
-                Self.log.info("Copied OTP for '\(item.title)'")
-                showToastThenDismiss("One-time password copied")
+                ClipboardManager.copy(value, concealed: concealed)
+                Self.log.info("Copied \(label) for '\(item.title)'")
+                showToastThenDismiss("\(label) copied")
             } catch OPClientError.fieldNotFound {
-                Self.log.info("No OTP for item '\(item.title)'")
+                Self.log.info("No \(label) for item '\(item.title)'")
                 viewModel.toastMessage = nil
                 viewModel.toastIcon = nil
             } catch OPClientError.notAuthenticated {
@@ -155,7 +165,7 @@ final class ActionHandler {
                 viewModel.toastIcon = nil
             } catch {
                 guard !Task.isCancelled else { return }
-                Self.log.error("Failed to fetch OTP: \(error)")
+                Self.log.error("Failed to fetch \(label): \(error)")
                 viewModel.toastMessage = nil
                 viewModel.toastIcon = nil
             }

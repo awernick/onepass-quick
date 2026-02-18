@@ -183,7 +183,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         hotkeyManager?.panelKeyHandler = { [weak self] keycode, flags in
             guard let self else { return false }
 
-            // Cmd+Option+C → copy OTP
+            // Cmd+Option+C → copy tertiary field (OTP for LOGIN, expiry for CREDIT_CARD, etc.)
             let isCKey = keycode == 8
             let isCommand = flags.contains(.maskCommand)
             let isOption = flags.contains(.maskAlternate)
@@ -192,7 +192,7 @@ final class PanelController: NSObject, NSWindowDelegate {
 
             if isCKey && isCommand && isOption && noShift && noControl {
                 Task { @MainActor in
-                    self.actionHandler.copyOTP()
+                    self.actionHandler.copyTertiary()
                 }
                 return true
             }
@@ -228,15 +228,15 @@ final class PanelController: NSObject, NSWindowDelegate {
             return nil
 
         case 8 where flags == [.command, .option]:  // Cmd+Option+C
-            actionHandler.copyOTP()
+            actionHandler.copyTertiary()
             return nil
 
         case 8 where flags == [.command, .shift]:  // Cmd+Shift+C
-            actionHandler.copyPassword()
+            actionHandler.copySecret()
             return nil
 
         case 8 where flags == [.command]:  // Cmd+C
-            actionHandler.copyUsername()
+            actionHandler.copyPrimary()
             return nil
 
         case 36:  // Enter/Return
