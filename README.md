@@ -31,9 +31,9 @@ OnePass Quick uses an `NSPanel` at a floating window level that tiling WMs ignor
 | `Cmd+\` | Show/hide panel (global) |
 | `Up/Down` | Navigate results |
 | `Enter` | Open URL in browser |
-| `Cmd+C` | Copy username |
-| `Cmd+Shift+C` | Copy password |
-| `Cmd+Option+C` | Copy one-time password |
+| `Cmd+C` | Copy primary field (username, card number, etc.) |
+| `Cmd+Shift+C` | Copy secret field (password, CVV, etc.) |
+| `Cmd+Option+C` | Copy tertiary field (OTP, expiry, etc.) |
 | `Cmd+O` | Open in 1Password |
 | `Esc` | Dismiss panel |
 
