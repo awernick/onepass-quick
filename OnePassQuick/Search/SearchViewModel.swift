@@ -75,16 +75,32 @@ final class SearchViewModel: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
 
+    /// The in-flight fuzzy matching task. Cancelled on each new input
+    /// so stale computations don't overwrite fresher results.
+    private var searchTask: Task<Void, Never>?
+
+    /// Debounce interval for query changes before triggering fuzzy match.
+    private static let searchDebounce: RunLoop.SchedulerTimeType.Stride = .milliseconds(100)
+
     // MARK: - Init
 
     init() {
-        // Recalculate filtered results when query or items change,
-        // and reset selection to top.
+        // Recalculate filtered results when query or items change.
+        // Debounce rapid keystrokes to avoid redundant O(n*m) work.
+        // Matching runs on a background thread to keep the UI responsive.
         Publishers.CombineLatest($query, $items)
-            .sink { [weak self] _, _ in
+            .debounce(for: Self.searchDebounce, scheduler: RunLoop.main)
+            .sink { [weak self] query, items in
                 guard let self else { return }
                 self.selectedIndex = 0
-                self.filteredResults = self.computeFilteredResults()
+                self.searchTask?.cancel()
+                self.searchTask = Task { [weak self] in
+                    let results = await Self.computeFilteredResults(
+                        query: query, items: items
+                    )
+                    guard !Task.isCancelled else { return }
+                    self?.filteredResults = results
+                }
             }
             .store(in: &cancellables)
     }
@@ -99,9 +115,15 @@ final class SearchViewModel: ObservableObject {
     private static let usernameBonus: Double = 500.0
     private static let urlBonus: Double = 0.0
 
-    /// Compute filtered results from the current query and items.
-    /// Called once per query/items change via Combine, not per access.
-    private func computeFilteredResults() -> [SearchResult] {
+    /// Compute filtered results from the given query and items.
+    ///
+    /// This is `nonisolated` and `static` so it can run on a background
+    /// thread without blocking the main actor. The O(n*m) fuzzy matching
+    /// is the most expensive operation in the app.
+    private nonisolated static func computeFilteredResults(
+        query: String,
+        items: [Item]
+    ) async -> [SearchResult] {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
             return items.map { SearchResult(item: $0, titlePositions: []) }
@@ -116,7 +138,7 @@ final class SearchViewModel: ObservableObject {
                     let result = SearchResult(
                         item: item, titlePositions: m.positions
                     )
-                    return (result, Self.titleBonus + m.score)
+                    return (result, titleBonus + m.score)
                 }
                 // Username / additional info match
                 if let info = item.additionalInformation,
@@ -127,7 +149,7 @@ final class SearchViewModel: ObservableObject {
                     let result = SearchResult(
                         item: item, titlePositions: []
                     )
-                    return (result, Self.usernameBonus + m.score)
+                    return (result, usernameBonus + m.score)
                 }
                 // URL match
                 if let url = item.primaryURL,
@@ -138,7 +160,7 @@ final class SearchViewModel: ObservableObject {
                     let result = SearchResult(
                         item: item, titlePositions: []
                     )
-                    return (result, Self.urlBonus + m.score)
+                    return (result, urlBonus + m.score)
                 }
                 return nil
             }
