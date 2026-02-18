@@ -58,5 +58,22 @@ struct SearchField: NSViewRepresentable {
             guard let field = obj.object as? NSTextField else { return }
             text.wrappedValue = field.stringValue
         }
+
+        /// Intercept commands the field editor wants to perform.
+        /// Returning `true` tells the field editor "I handled it" so it
+        /// won't move the cursor. Arrow keys are used for result navigation.
+        func control(
+            _ control: NSControl,
+            textView: NSTextView,
+            doCommandBy commandSelector: Selector
+        ) -> Bool {
+            switch commandSelector {
+            case #selector(NSResponder.moveUp(_:)),
+                 #selector(NSResponder.moveDown(_:)):
+                return true
+            default:
+                return false
+            }
+        }
     }
 }
