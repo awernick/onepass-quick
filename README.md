@@ -5,6 +5,10 @@
 
 A lightweight macOS menu bar app that replaces 1Password's Quick Access popup. Uses the `op` CLI to search and retrieve credentials, rendered in a floating panel that tiling window managers ignore.
 
+<p align="center">
+  <img src="assets/demo.gif" alt="OnePass Quick demo" width="680">
+</p>
+
 ## Why This Exists
 
 1Password's native Quick Access creates a standard macOS window that tiling window managers (like [AeroSpace](https://github.com/nikitabobko/AeroSpace)) try to manage, causing workspace switching, popup disappearing, and focus issues. Alfred and Raycast integrations exist but have limitations (non-customizable shortcuts, automation bugs).
