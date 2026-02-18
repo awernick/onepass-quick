@@ -46,7 +46,7 @@ struct ItemRow: View {
         .background(
             isSelected
                 ? RoundedRectangle(cornerRadius: 6)
-                    .fill(.blue)
+                    .fill(.blue.opacity(0.35))
                 : nil
         )
         .contentShape(Rectangle())
