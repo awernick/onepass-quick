@@ -311,35 +311,37 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     /// Open the selected item in the 1Password desktop app.
     ///
-    /// Constructs a Private Link URL using the cached account info and
-    /// item/vault IDs, then opens it via `NSWorkspace`. The URL
-    /// redirects through `start.1password.com` into the desktop app,
-    /// navigating directly to the item.
+    /// Uses the native `onepassword://view-item/` URL scheme to deep
+    /// link directly into the 1Password 8 desktop app. This bypasses
+    /// the browser entirely (unlike `start.1password.com` Private Links).
     ///
     /// Falls back to just activating the 1Password app if account info
     /// is unavailable.
     private func openInOnePassword() {
         guard let item = viewModel.selectedItem else { return }
 
+        // Clear previousApp so hide() doesn't steal focus from 1Password
+        // when it re-activates the previously focused app.
+        previousApp = nil
+
         if let account = viewModel.account {
             var components = URLComponents()
-            components.scheme = "https"
-            components.host = "start.1password.com"
-            components.path = "/open/i"
+            components.scheme = "onepassword"
+            components.host = "view-item"
+            components.path = "/"
             components.queryItems = [
                 URLQueryItem(name: "a", value: account.accountUuid),
-                URLQueryItem(name: "h", value: account.url),
-                URLQueryItem(name: "i", value: item.id),
                 URLQueryItem(name: "v", value: item.vault.id),
+                URLQueryItem(name: "i", value: item.id),
             ]
 
             if let url = components.url {
                 NSWorkspace.shared.open(url)
                 Self.log.info(
-                    "Opened item \(item.id) in 1Password via Private Link"
+                    "Opened item \(item.id) in 1Password via onepassword:// scheme"
                 )
             } else {
-                Self.log.error("Failed to construct Private Link URL")
+                Self.log.error("Failed to construct onepassword:// URL")
                 openOnePasswordApp()
             }
         } else {
