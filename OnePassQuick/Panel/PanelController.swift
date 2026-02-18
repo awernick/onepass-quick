@@ -109,12 +109,13 @@ final class PanelController: NSObject, NSWindowDelegate {
     // MARK: - Hosting View Setup
 
     private func setupHostingView() {
-        let searchView = SearchView(
+        let rootView = SearchView(
             viewModel: viewModel,
             focusTrigger: focusTriggerSubject.binding
         )
+        .ignoresSafeArea()
 
-        let hostingView = NSHostingView(rootView: searchView)
+        let hostingView = NSHostingView(rootView: rootView)
         hostingView.frame = panel.contentView?.bounds ?? .zero
         hostingView.autoresizingMask = [.width, .height]
         panel.contentView?.addSubview(hostingView)
