@@ -14,6 +14,7 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     private let panel: QuickAccessPanel
     private let viewModel: SearchViewModel
+    private let actionHandler: ActionHandler
 
     /// Binding bridge: since NSHostingView is created once, we use a
     /// reference-type wrapper so SwiftUI can observe changes.
@@ -26,25 +27,23 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// Local key event monitor, active only while the panel is visible.
     private var keyMonitor: Any?
 
-    /// Guards against overlapping async actions (e.g., double Cmd+Shift+C
-    /// while Touch ID is pending).
-    private var isPerformingAction: Bool = false
-
-    /// In-flight password fetch task. Stored so it can be cancelled when
-    /// the panel hides (e.g., user presses Esc during Touch ID).
-    private var actionTask: Task<Void, Never>?
-
-    /// Pending hide after toast display. Cancelled if the user dismisses
-    /// manually (Esc) before the delay expires.
-    private var toastHideTask: Task<Void, Never>?
-
-    /// Duration the toast is visible before the panel auto-hides.
-    private static let toastDuration: UInt64 = 500_000_000  // 0.5s
-
     override init() {
         panel = QuickAccessPanel()
         viewModel = SearchViewModel()
+        // Temporary placeholder — replaced after super.init()
+        actionHandler = ActionHandler(
+            viewModel: viewModel,
+            onDismiss: {},
+            onClearPreviousApp: {}
+        )
         super.init()
+
+        // Wire up closures now that `self` is available
+        actionHandler.onDismiss = { [weak self] in self?.hide() }
+        actionHandler.onClearPreviousApp = { [weak self] in
+            self?.previousApp = nil
+        }
+
         panel.delegate = self
         setupHostingView()
     }
@@ -84,14 +83,8 @@ final class PanelController: NSObject, NSWindowDelegate {
     private func hide() {
         removeKeyMonitor()
 
-        // Cancel any in-flight credential fetch (e.g., Touch ID pending)
-        actionTask?.cancel()
-        actionTask = nil
-        isPerformingAction = false
-
-        // Cancel pending toast-delayed hide
-        toastHideTask?.cancel()
-        toastHideTask = nil
+        // Cancel any in-flight actions (credential fetch, toast delay)
+        actionHandler.cancelAll()
 
         if panel.isVisible {
             panel.orderOut(nil)
@@ -186,190 +179,23 @@ final class PanelController: NSObject, NSWindowDelegate {
             return nil
 
         case 8 where flags == [.command, .shift]:  // Cmd+Shift+C
-            copyPassword()
+            actionHandler.copyPassword()
             return nil
 
         case 8 where flags == [.command]:  // Cmd+C
-            copyUsername()
+            actionHandler.copyUsername()
             return nil
 
         case 36:  // Enter/Return
-            openURL()
+            actionHandler.openURL()
             return nil
 
         case 31 where flags == [.command]:  // Cmd+O
-            openInOnePassword()
+            actionHandler.openInOnePassword()
             return nil
 
         default:
             return event
-        }
-    }
-
-    // MARK: - Actions
-
-    /// Show a toast message in the panel, then hide after a short delay.
-    ///
-    /// The toast replaces the results area with an icon + message. If the
-    /// user dismisses manually (Esc) before the delay, `hide()` cancels
-    /// the pending task.
-    private func showToastThenHide(
-        _ message: String,
-        icon: String = "checkmark.circle.fill"
-    ) {
-        viewModel.toastMessage = message
-        viewModel.toastIcon = icon
-
-        toastHideTask?.cancel()
-        toastHideTask = Task {
-            try? await Task.sleep(nanoseconds: Self.toastDuration)
-            guard !Task.isCancelled else { return }
-            hide()
-        }
-    }
-
-    /// Copy the selected item's username to clipboard.
-    ///
-    /// Uses `additionalInformation` from the cached item list — no CLI call,
-    /// no Touch ID.
-    private func copyUsername() {
-        guard let item = viewModel.selectedItem else { return }
-
-        guard let username = item.additionalInformation, !username.isEmpty else {
-            Self.log.info("No username for item '\(item.title)'")
-            return
-        }
-
-        ClipboardManager.copy(username, concealed: false)
-        Self.log.info("Copied username for '\(item.title)'")
-        showToastThenHide("Username copied")
-    }
-
-    /// Copy the selected item's password to clipboard.
-    ///
-    /// Fetches the password via `op item get` which triggers a Touch ID prompt.
-    /// Panel stays visible during the fetch and hides only on success.
-    private func copyPassword() {
-        guard let item = viewModel.selectedItem else { return }
-        guard !isPerformingAction else { return }
-
-        // Show immediate feedback while the CLI fetches the password
-        viewModel.toastMessage = "Fetching password\u{2026}"
-        viewModel.toastIcon = "ellipsis.circle"
-
-        isPerformingAction = true
-        actionTask = Task {
-            defer { isPerformingAction = false }
-            do {
-                let password = try await OPClient.getField(
-                    itemID: item.id,
-                    field: "password"
-                )
-                guard !Task.isCancelled else { return }
-                ClipboardManager.copy(password, concealed: true)
-                Self.log.info("Copied password for '\(item.title)'")
-                showToastThenHide("Password copied")
-            } catch OPClientError.fieldNotFound {
-                Self.log.info("No password for item '\(item.title)'")
-                viewModel.toastMessage = nil
-                viewModel.toastIcon = nil
-            } catch OPClientError.notAuthenticated {
-                Self.log.info("Auth cancelled for '\(item.title)'")
-                // User cancelled Touch ID — panel stays open, no-op
-                viewModel.toastMessage = nil
-                viewModel.toastIcon = nil
-            } catch {
-                guard !Task.isCancelled else { return }
-                Self.log.error("Failed to fetch password: \(error)")
-                viewModel.toastMessage = nil
-                viewModel.toastIcon = nil
-            }
-        }
-    }
-
-    /// Open the selected item's primary URL in the default browser.
-    ///
-    /// Uses the cached URL from the item list — no CLI call.
-    private func openURL() {
-        guard let item = viewModel.selectedItem else { return }
-
-        guard let urlString = item.primaryURL else {
-            Self.log.info("No URL for item '\(item.title)'")
-            return
-        }
-
-        // Ensure URL has a scheme — op CLI may return bare hostnames
-        let normalized = urlString.hasPrefix("http://")
-            || urlString.hasPrefix("https://")
-            ? urlString : "https://\(urlString)"
-
-        guard let url = URL(string: normalized) else {
-            Self.log.info("Invalid URL for item '\(item.title)'")
-            return
-        }
-
-        NSWorkspace.shared.open(url)
-        Self.log.info("Opened URL for '\(item.title)'")
-        showToastThenHide("Opening URL\u{2026}", icon: "arrow.up.forward")
-    }
-
-    /// Open the selected item in the 1Password desktop app.
-    ///
-    /// Uses the native `onepassword://view-item/` URL scheme to deep
-    /// link directly into the 1Password 8 desktop app. This bypasses
-    /// the browser entirely (unlike `start.1password.com` Private Links).
-    ///
-    /// Falls back to just activating the 1Password app if account info
-    /// is unavailable.
-    private func openInOnePassword() {
-        guard let item = viewModel.selectedItem else { return }
-
-        // Clear previousApp so hide() doesn't steal focus from 1Password
-        // when it re-activates the previously focused app.
-        previousApp = nil
-
-        if let account = viewModel.account {
-            var components = URLComponents()
-            components.scheme = "onepassword"
-            components.host = "view-item"
-            components.path = "/"
-            components.queryItems = [
-                URLQueryItem(name: "a", value: account.accountUuid),
-                URLQueryItem(name: "v", value: item.vault.id),
-                URLQueryItem(name: "i", value: item.id),
-            ]
-
-            if let url = components.url {
-                NSWorkspace.shared.open(url)
-                Self.log.info(
-                    "Opened item \(item.id) in 1Password via onepassword:// scheme"
-                )
-            } else {
-                Self.log.error("Failed to construct onepassword:// URL")
-                openOnePasswordApp()
-            }
-        } else {
-            Self.log.warning(
-                "Account info unavailable, opening 1Password without deep link"
-            )
-            openOnePasswordApp()
-        }
-
-        showToastThenHide(
-            "Opening 1Password\u{2026}",
-            icon: "arrow.up.forward"
-        )
-    }
-
-    /// Activate the 1Password app without navigating to a specific item.
-    private func openOnePasswordApp() {
-        if let url = NSWorkspace.shared.urlForApplication(
-            withBundleIdentifier: "com.1password.1password"
-        ) {
-            NSWorkspace.shared.open(url)
-            Self.log.info("Opened 1Password app (no deep link)")
-        } else {
-            Self.log.error("1Password app not found")
         }
     }
 
