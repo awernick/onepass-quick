@@ -111,8 +111,12 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// Called when the panel loses key window status (e.g., user clicks
     /// outside, or `hidesOnDeactivate` triggers). Ensures cleanup runs
     /// even when `hide()` isn't called explicitly.
+    ///
+    /// Uses `Task { @MainActor in }` instead of `assumeIsolated` because
+    /// AppKit does not guarantee the delegate is always called on the main
+    /// thread. `assumeIsolated` would trap if that assumption is violated.
     nonisolated func windowDidResignKey(_ notification: Notification) {
-        MainActor.assumeIsolated {
+        Task { @MainActor in
             hide()
         }
     }
