@@ -1,6 +1,9 @@
 # Generated Xcode project (regenerate with `xcodegen generate`)
 OnePassQuick.xcodeproj/
 
+# Local signing overrides (see project.local.example.yml)
+project.local.yml
+
 # Xcode
 build/
 DerivedData/

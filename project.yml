@@ -1,4 +1,7 @@
 name: OnePassQuick
+include:
+  - path: project.local.yml
+    required: false
 options:
   bundleIdPrefix: com.awernick
   deploymentTarget:
@@ -36,8 +39,7 @@ targets:
         INFOPLIST_FILE: OnePassQuick/Resources/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         COMBINE_HIDPI_IMAGES: true
-        CODE_SIGN_STYLE: Manual
-        CODE_SIGN_IDENTITY: "Apple Development"
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_ENTITLEMENTS: OnePassQuick/Resources/OnePassQuick.entitlements
-        DEVELOPMENT_TEAM: 9A3C3KAB5A
-        ENABLE_HARDENED_RUNTIME: true
+        ENABLE_HARDENED_RUNTIME: false

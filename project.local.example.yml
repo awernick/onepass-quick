@@ -1,0 +1,17 @@
+## Local signing overrides.
+##
+## Copy this file to project.local.yml and fill in your DEVELOPMENT_TEAM
+## to use a real Apple Development certificate. This gives you stable
+## Accessibility (TCC) permissions across rebuilds.
+##
+## Without this file, builds use ad-hoc signing ("Sign to Run Locally")
+## which works but requires re-granting Accessibility permission after
+## each rebuild.
+targets:
+  OnePassQuick:
+    settings:
+      base:
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Apple Development"
+        DEVELOPMENT_TEAM: YOUR_TEAM_ID_HERE
+        ENABLE_HARDENED_RUNTIME: true
