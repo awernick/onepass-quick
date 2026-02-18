@@ -9,6 +9,7 @@ struct ShortcutHintsBar: View {
             hint("↩", "Open URL")
             hint("⌘C", "Username")
             hint("⌘⇧C", "Password")
+            hint("⌘⌥C", "OTP")
             hint("⌘O", "1Password")
             Spacer()
             hint("esc", "Dismiss")

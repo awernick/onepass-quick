@@ -27,10 +27,14 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// Local key event monitor, active only while the panel is visible.
     private var keyMonitor: Any?
 
+    /// Reference to the hotkey manager, used to register/unregister
+    /// panel-visible shortcuts at the CGEvent tap level.
+    private weak var hotkeyManager: HotkeyManager?
+
     override init() {
         panel = QuickAccessPanel()
         viewModel = SearchViewModel()
-        // Temporary placeholder — replaced after super.init()
+        // Temporary placeholder -- replaced after super.init()
         actionHandler = ActionHandler(
             viewModel: viewModel,
             onDismiss: {},
@@ -46,6 +50,14 @@ final class PanelController: NSObject, NSWindowDelegate {
 
         panel.delegate = self
         setupHostingView()
+    }
+
+    /// Set the hotkey manager reference for CGEvent tap shortcut forwarding.
+    ///
+    /// Called by AppDelegate after both PanelController and HotkeyManager
+    /// are created.
+    func setHotkeyManager(_ manager: HotkeyManager) {
+        hotkeyManager = manager
     }
 
     // MARK: - Public API
@@ -73,6 +85,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         viewModel.loadItems()
         requestSearchFieldFocus()
         installKeyMonitor()
+        installPanelKeyHandler()
     }
 
     /// Hide the panel and restore focus to the previous app.
@@ -82,6 +95,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// panel auto-hides due to `hidesOnDeactivate`.
     private func hide() {
         removeKeyMonitor()
+        removePanelKeyHandler()
 
         // Cancel any in-flight actions (credential fetch, toast delay)
         actionHandler.cancelAll()
@@ -158,6 +172,41 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
     }
 
+    // MARK: - CGEvent Tap Panel Shortcuts
+
+    /// Register panel-visible shortcuts with the CGEvent tap so they
+    /// intercept before other apps' global shortcuts (e.g., Alfred).
+    ///
+    /// Only shortcuts that conflict with other apps need to go here.
+    /// Most panel shortcuts work fine through the local NSEvent monitor.
+    private func installPanelKeyHandler() {
+        hotkeyManager?.panelKeyHandler = { [weak self] keycode, flags in
+            guard let self else { return false }
+
+            // Cmd+Option+C → copy OTP
+            let isCKey = keycode == 8
+            let isCommand = flags.contains(.maskCommand)
+            let isOption = flags.contains(.maskAlternate)
+            let noShift = !flags.contains(.maskShift)
+            let noControl = !flags.contains(.maskControl)
+
+            if isCKey && isCommand && isOption && noShift && noControl {
+                Task { @MainActor in
+                    self.actionHandler.copyOTP()
+                }
+                return true
+            }
+
+            return false
+        }
+    }
+
+    private func removePanelKeyHandler() {
+        hotkeyManager?.panelKeyHandler = nil
+    }
+
+    // MARK: - Local Key Event Handling
+
     /// Handle a key event. Returns `nil` to consume, or the event to pass through.
     ///
     /// Modifier checks use `intersection` with device-independent flags to
@@ -176,6 +225,10 @@ final class PanelController: NSObject, NSWindowDelegate {
 
         case 126:  // Up Arrow
             viewModel.moveSelection(by: -1)
+            return nil
+
+        case 8 where flags == [.command, .option]:  // Cmd+Option+C
+            actionHandler.copyOTP()
             return nil
 
         case 8 where flags == [.command, .shift]:  // Cmd+Shift+C

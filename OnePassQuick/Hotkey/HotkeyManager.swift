@@ -33,6 +33,15 @@ final class HotkeyManager {
     /// Whether the event tap is active and consuming events.
     private(set) var isActive: Bool = false
 
+    /// Optional handler for panel-visible key events. When set, the
+    /// CGEvent tap forwards non-toggle key events to this handler.
+    /// Return `true` to consume the event, `false` to pass through.
+    ///
+    /// Set by `PanelController` during show/hide to intercept shortcuts
+    /// (like Cmd+Option+C) at the CGEvent tap level, before other apps'
+    /// global shortcuts can steal them.
+    var panelKeyHandler: ((_ keycode: Int64, _ flags: CGEventFlags) -> Bool)?
+
     /// Creates a hotkey manager that calls `handler` when Cmd+\ is pressed.
     ///
     /// - Parameter handler: Closure invoked on the main thread when the
@@ -156,6 +165,16 @@ final class HotkeyManager {
 
         // Still consume auto-repeat Cmd+\ so it doesn't leak to other apps
         if isBackslash && isCommand && noExtraModifiers && isAutoRepeat {
+            return nil
+        }
+
+        // Forward to panel key handler when the panel is visible.
+        // This lets PanelController intercept shortcuts at the CGEvent
+        // level (before other apps like Alfred consume them).
+        if let panelHandler = panelKeyHandler,
+            !isAutoRepeat,
+            panelHandler(keycode, flags)
+        {
             return nil
         }
 

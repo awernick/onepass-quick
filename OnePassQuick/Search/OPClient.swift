@@ -221,6 +221,53 @@ enum OPClient {
         }
     }
 
+    /// Fetch the current one-time password (TOTP) for a 1Password item.
+    ///
+    /// Calls `op item get <id> --otp`. Returns the current TOTP code as
+    /// a plain string. Throws `fieldNotFound` if the item has no TOTP
+    /// configuration.
+    ///
+    /// - Note: Triggers a Touch ID prompt via the 1Password desktop app.
+    static func getOTP(itemID: String) async throws -> String {
+        let opPath = try await resolveOPPath()
+        log.info("Fetching OTP for item \(itemID)")
+
+        let arguments = ["item", "get", itemID, "--otp"]
+        let (stdout, stderr, exitCode) = try await runProcess(
+            executablePath: opPath,
+            arguments: arguments
+        )
+
+        if exitCode != 0 {
+            let stderrTrimmed = stderr.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            let errorOutput = stderrTrimmed.isEmpty
+                ? stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+                : stderrTrimmed
+
+            log.error(
+                "op item get --otp failed (exit \(exitCode)): \(errorOutput)"
+            )
+
+            if isAuthenticationError(errorOutput) {
+                throw OPClientError.notAuthenticated(errorOutput)
+            }
+            if isOTPNotFoundError(errorOutput) {
+                throw OPClientError.fieldNotFound("one-time password")
+            }
+            throw OPClientError.executionFailed(errorOutput)
+        }
+
+        let otp = stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !otp.isEmpty else {
+            throw OPClientError.fieldNotFound("one-time password")
+        }
+
+        log.info("Fetched OTP successfully")
+        return otp
+    }
+
     // MARK: - Process Execution
 
     /// Run an external process and capture its output without blocking any thread.
@@ -405,6 +452,13 @@ enum OPClient {
     /// The CLI outputs: `"username" isn't a field in the "..." item`
     private static func isFieldNotFoundError(_ message: String) -> Bool {
         message.contains("isn't a field in the")
+    }
+
+    /// Check if the CLI error indicates the item has no TOTP configuration.
+    ///
+    /// The CLI outputs: `"..." doesn't have a one-time password.`
+    private static func isOTPNotFoundError(_ message: String) -> Bool {
+        message.lowercased().contains("doesn't have a one-time password")
     }
 }
 

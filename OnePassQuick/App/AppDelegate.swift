@@ -18,6 +18,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyManager = HotkeyManager { [weak self] in
             self?.panelController?.toggle()
         }
+        // Wire up hotkey manager so PanelController can register
+        // panel-visible shortcuts at the CGEvent tap level.
+        if let manager = hotkeyManager {
+            panelController?.setHotkeyManager(manager)
+        }
         updateMenuBarStatus()
     }
 

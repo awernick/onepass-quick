@@ -125,6 +125,43 @@ final class ActionHandler {
         }
     }
 
+    /// Copy the selected item's one-time password (TOTP) to clipboard.
+    ///
+    /// Fetches the current code via `op item get --otp` which triggers
+    /// a Touch ID prompt. Same async pattern as `copyPassword`.
+    func copyOTP() {
+        guard let item = viewModel.selectedItem else { return }
+        guard !isPerformingAction else { return }
+
+        viewModel.toastMessage = "Fetching one-time password\u{2026}"
+        viewModel.toastIcon = "ellipsis.circle"
+
+        isPerformingAction = true
+        actionTask = Task {
+            defer { isPerformingAction = false }
+            do {
+                let otp = try await OPClient.getOTP(itemID: item.id)
+                guard !Task.isCancelled else { return }
+                ClipboardManager.copy(otp, concealed: true)
+                Self.log.info("Copied OTP for '\(item.title)'")
+                showToastThenDismiss("One-time password copied")
+            } catch OPClientError.fieldNotFound {
+                Self.log.info("No OTP for item '\(item.title)'")
+                viewModel.toastMessage = nil
+                viewModel.toastIcon = nil
+            } catch OPClientError.notAuthenticated {
+                Self.log.info("Auth cancelled for '\(item.title)'")
+                viewModel.toastMessage = nil
+                viewModel.toastIcon = nil
+            } catch {
+                guard !Task.isCancelled else { return }
+                Self.log.error("Failed to fetch OTP: \(error)")
+                viewModel.toastMessage = nil
+                viewModel.toastIcon = nil
+            }
+        }
+    }
+
     /// Open the selected item's primary URL in the default browser.
     ///
     /// Uses the cached URL from the item list -- no CLI call.
