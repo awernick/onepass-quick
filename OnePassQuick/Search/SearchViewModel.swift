@@ -66,6 +66,10 @@ final class SearchViewModel: ObservableObject {
     /// CLI calls when the panel is shown repeatedly while stale.
     private var isRefreshing: Bool = false
 
+    /// The in-flight fetch task. Stored so it can be cancelled when the
+    /// panel hides (e.g. user presses Esc during a long fetch).
+    private var fetchTask: Task<Void, Never>?
+
     /// How long before cached items are considered stale.
     private static let cacheMaxAge: TimeInterval = 5 * 60  // 5 minutes
 
@@ -149,6 +153,10 @@ final class SearchViewModel: ObservableObject {
     /// On first call, shows a loading indicator and fetches items. On
     /// subsequent calls, returns cached items immediately but triggers a
     /// background refresh if the cache is stale (> 5 minutes).
+    ///
+    /// The fetch task is tracked so it can be cancelled when the panel
+    /// hides (via `resetState`), preventing `isLoading` from getting
+    /// stuck if the CLI hangs or times out.
     func loadItems(force: Bool = false) {
         guard !isLoading else { return }
 
@@ -158,7 +166,11 @@ final class SearchViewModel: ObservableObject {
         if !hasLoaded || force {
             isLoading = true
             error = nil
-            Task { await fetchItems() }
+            fetchTask?.cancel()
+            fetchTask = Task {
+                await fetchItems()
+                fetchTask = nil
+            }
             return
         }
 
@@ -166,9 +178,11 @@ final class SearchViewModel: ObservableObject {
         if isStale, !isRefreshing {
             isRefreshing = true
             Self.log.info("Cache stale, refreshing in background")
-            Task {
+            fetchTask?.cancel()
+            fetchTask = Task {
                 await fetchItems()
                 isRefreshing = false
+                fetchTask = nil
             }
         }
     }
@@ -183,8 +197,9 @@ final class SearchViewModel: ObservableObject {
     private func fetchAccountIfNeeded() async {
         guard account == nil else { return }
         do {
-            account = try await OPClient.getAccount()
-            Self.log.info("Loaded account: \(self.account!.url)")
+            let fetched = try await OPClient.getAccount()
+            account = fetched
+            Self.log.info("Loaded account: \(fetched.url)")
         } catch {
             Self.log.warning(
                 "Failed to load account info: \(error.localizedDescription)"
@@ -244,7 +259,14 @@ final class SearchViewModel: ObservableObject {
 
     /// Reset state for the next panel show. Clears query and selection
     /// but preserves cached items.
+    ///
+    /// Cancels any in-flight fetch task and resets `isLoading` so the
+    /// next panel show can retry instead of being stuck in a loading state.
     func resetState() {
+        fetchTask?.cancel()
+        fetchTask = nil
+        isLoading = false
+
         query = ""
         selectedIndex = 0
         error = nil
