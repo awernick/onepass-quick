@@ -309,27 +309,62 @@ final class PanelController: NSObject, NSWindowDelegate {
         showToastThenHide("Opening URL\u{2026}", icon: "arrow.up.forward")
     }
 
-    /// Open the 1Password desktop app.
+    /// Open the selected item in the 1Password desktop app.
     ///
-    /// 1Password 8 does not support deep linking to specific items via
-    /// URL scheme (known limitation). This just activates the app so the
-    /// user can find the item there. A future improvement could use
-    /// Private Links if we fetch the account UUID.
+    /// Constructs a Private Link URL using the cached account info and
+    /// item/vault IDs, then opens it via `NSWorkspace`. The URL
+    /// redirects through `start.1password.com` into the desktop app,
+    /// navigating directly to the item.
+    ///
+    /// Falls back to just activating the 1Password app if account info
+    /// is unavailable.
     private func openInOnePassword() {
-        guard viewModel.selectedItem != nil else { return }
+        guard let item = viewModel.selectedItem else { return }
 
-        if let url = NSWorkspace.shared.urlForApplication(
-            withBundleIdentifier: "com.1password.1password"
-        ) {
-            NSWorkspace.shared.open(url)
-            Self.log.info("Opened 1Password app")
+        if let account = viewModel.account {
+            var components = URLComponents()
+            components.scheme = "https"
+            components.host = "start.1password.com"
+            components.path = "/open/i"
+            components.queryItems = [
+                URLQueryItem(name: "a", value: account.accountUuid),
+                URLQueryItem(name: "h", value: account.url),
+                URLQueryItem(name: "i", value: item.id),
+                URLQueryItem(name: "v", value: item.vault.id),
+            ]
+
+            if let url = components.url {
+                NSWorkspace.shared.open(url)
+                Self.log.info(
+                    "Opened item \(item.id) in 1Password via Private Link"
+                )
+            } else {
+                Self.log.error("Failed to construct Private Link URL")
+                openOnePasswordApp()
+            }
         } else {
-            Self.log.error("1Password app not found")
+            Self.log.warning(
+                "Account info unavailable, opening 1Password without deep link"
+            )
+            openOnePasswordApp()
         }
+
         showToastThenHide(
             "Opening 1Password\u{2026}",
             icon: "arrow.up.forward"
         )
+    }
+
+    /// Activate the 1Password app without navigating to a specific item.
+    private func openOnePasswordApp() {
+        if let url = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: "com.1password.1password"
+        ) {
+            NSWorkspace.shared.open(url)
+            Self.log.info("Opened 1Password app (no deep link)")
+        } else {
+            Self.log.error("1Password app not found")
+        }
     }
 
     // MARK: - Positioning

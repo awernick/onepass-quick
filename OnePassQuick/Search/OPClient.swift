@@ -93,6 +93,60 @@ enum OPClient {
         }
     }
 
+    /// Fetch the default 1Password account info.
+    ///
+    /// Calls `op account list --format json` and returns the first
+    /// account. Used to construct Private Link URLs for deep linking.
+    static func getAccount() async throws -> OPAccount {
+        let opPath = try resolveOPPath()
+        log.info("Fetching account info via \(opPath)")
+
+        let arguments = ["account", "list", "--format", "json"]
+        let (stdout, stderr, exitCode) = try await runProcess(
+            executablePath: opPath,
+            arguments: arguments
+        )
+
+        if exitCode != 0 {
+            let stderrTrimmed = stderr.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            let errorOutput = stderrTrimmed.isEmpty
+                ? stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+                : stderrTrimmed
+            log.error(
+                "op account list failed (exit \(exitCode)): \(errorOutput)"
+            )
+
+            if isAuthenticationError(errorOutput) {
+                throw OPClientError.notAuthenticated(errorOutput)
+            }
+            throw OPClientError.executionFailed(errorOutput)
+        }
+
+        guard let data = stdout.data(using: .utf8) else {
+            throw OPClientError.decodingFailed("Empty or invalid output")
+        }
+
+        do {
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            let accounts = try decoder.decode([OPAccount].self, from: data)
+            guard let account = accounts.first else {
+                throw OPClientError.executionFailed(
+                    "No accounts found"
+                )
+            }
+            log.info("Fetched account: \(account.url)")
+            return account
+        } catch let opError as OPClientError {
+            throw opError
+        } catch {
+            log.error("JSON decode failed: \(error.localizedDescription)")
+            throw OPClientError.decodingFailed(error.localizedDescription)
+        }
+    }
+
     /// Fetch a single field value from a 1Password item.
     ///
     /// Calls `op item get <id> --fields <field> --format json --cache`.

@@ -35,6 +35,10 @@ final class SearchViewModel: ObservableObject {
     /// Error from the most recent load attempt, if any.
     @Published var error: OPClientError?
 
+    /// The 1Password account info used to construct Private Link URLs.
+    /// Fetched once alongside item loading.
+    @Published private(set) var account: OPAccount?
+
     /// Items filtered and scored by the current query. Recalculated
     /// once when `query` or `items` change, not on every access.
     @Published private(set) var filteredResults: [SearchResult] = []
@@ -175,8 +179,24 @@ final class SearchViewModel: ObservableObject {
         return Date().timeIntervalSince(lastLoad) > Self.cacheMaxAge
     }
 
+    /// Fetch account info from the CLI if not yet loaded.
+    private func fetchAccountIfNeeded() async {
+        guard account == nil else { return }
+        do {
+            account = try await OPClient.getAccount()
+            Self.log.info("Loaded account: \(self.account!.url)")
+        } catch {
+            Self.log.warning(
+                "Failed to load account info: \(error.localizedDescription)"
+            )
+        }
+    }
+
     /// Fetch items from the CLI and update state.
     private func fetchItems() async {
+        // Fetch account info concurrently with item list
+        async let accountFetch: Void = fetchAccountIfNeeded()
+
         do {
             let fetchedItems = try await OPClient.listItems()
             items = fetchedItems
@@ -196,6 +216,10 @@ final class SearchViewModel: ObservableObject {
             Self.log.error("Unexpected error: \(error.localizedDescription)")
         }
         isLoading = false
+
+        // Await the concurrent account fetch (fire-and-forget semantics;
+        // failure is logged inside fetchAccountIfNeeded).
+        await accountFetch
     }
 
     /// Move selection up or down within the filtered results.

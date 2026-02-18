@@ -79,6 +79,15 @@ struct ItemURL: Codable, Hashable {
     let href: String
 }
 
+/// A 1Password account as returned by `op account list --format json`.
+///
+/// Used to construct Private Link URLs for deep linking into the
+/// 1Password desktop app (e.g. "Open in 1Password").
+struct OPAccount: Codable {
+    let url: String
+    let accountUuid: String
+}
+
 /// A single field from `op item get --fields ... --format json`.
 ///
 /// Used to decode credential values fetched on-demand. The CLI returns
