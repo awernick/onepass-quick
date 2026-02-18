@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Carbon.HIToolbox
 import os.log
 
 /// Registers a global Cmd+\ hotkey using a CGEvent tap.
@@ -8,12 +9,17 @@ import os.log
 /// and logs the result. If the event tap fails to create, surfaces the
 /// error through the menu bar icon tooltip and logs it.
 ///
-/// - Note: Keycode 42 (`\`) is US-keyboard-specific. Non-US layouts may
-///   map a different character to this keycode.
+/// Uses `UCKeyTranslate` to resolve the keycode for `\` from the current
+/// keyboard layout, so the hotkey works on non-US layouts where the
+/// backslash key has a different keycode.
 final class HotkeyManager {
 
-    /// Keycode for `\` on US keyboard layout.
-    private static let backslashKeycode: Int64 = 42
+    /// The target character for the hotkey (backslash).
+    private static let targetCharacter: Character = "\\"
+
+    /// Fallback keycode for `\` on US keyboard layout, used when
+    /// `UCKeyTranslate` is unavailable.
+    private static let fallbackKeycode: Int64 = 42
 
     private static let log = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "OnePassQuick",
@@ -123,7 +129,15 @@ final class HotkeyManager {
         let keycode = event.getIntegerValueField(.keyboardEventKeycode)
         let flags = event.flags
 
-        let isBackslash = keycode == Self.backslashKeycode
+        // Check if the key produces `\` in the current keyboard layout,
+        // falling back to the US keycode if layout translation fails.
+        let isBackslash: Bool
+        if let character = Self.characterForKeycode(UInt16(keycode)) {
+            isBackslash = character == Self.targetCharacter
+        } else {
+            isBackslash = keycode == Self.fallbackKeycode
+        }
+
         let isCommand = flags.contains(.maskCommand)
         let noExtraModifiers = !flags.contains(.maskControl)
             && !flags.contains(.maskAlternate)
@@ -146,6 +160,54 @@ final class HotkeyManager {
         }
 
         return Unmanaged.passUnretained(event)
+    }
+
+    // MARK: - Keyboard Layout Translation
+
+    /// Translate a keycode to the character it produces on the current
+    /// keyboard layout (without modifiers).
+    ///
+    /// Uses `TISCopyCurrentKeyboardLayoutInputSource` and `UCKeyTranslate`
+    /// to handle non-US layouts where `\` may be on a different physical key.
+    private static func characterForKeycode(_ keycode: UInt16) -> Character? {
+        guard let inputSource = TISCopyCurrentKeyboardLayoutInputSource()?
+            .takeRetainedValue()
+        else { return nil }
+
+        guard let layoutDataRef = TISGetInputSourceProperty(
+            inputSource,
+            kTISPropertyUnicodeKeyLayoutData
+        ) else { return nil }
+
+        let layoutData = unsafeBitCast(layoutDataRef, to: CFData.self)
+        guard let bytePtr = CFDataGetBytePtr(layoutData) else {
+            return nil
+        }
+        let keyLayoutPtr = bytePtr.withMemoryRebound(
+            to: UCKeyboardLayout.self, capacity: 1
+        ) { $0 }
+
+        var deadKeyState: UInt32 = 0
+        var length = 0
+        var chars = [UniChar](repeating: 0, count: 4)
+
+        let status = UCKeyTranslate(
+            keyLayoutPtr,
+            keycode,
+            UInt16(kUCKeyActionDown),
+            0,  // no modifiers
+            UInt32(LMGetKbdType()),
+            UInt32(kUCKeyTranslateNoDeadKeysBit),
+            &deadKeyState,
+            chars.count,
+            &length,
+            &chars
+        )
+
+        guard status == noErr, length > 0,
+            let scalar = UnicodeScalar(chars[0])
+        else { return nil }
+        return Character(scalar)
     }
 
     // MARK: - Accessibility Permission
