@@ -94,12 +94,16 @@ final class SearchViewModel: ObservableObject {
                 guard let self else { return }
                 self.selectedIndex = 0
                 self.searchTask?.cancel()
-                self.searchTask = Task { [weak self] in
+                // Task.detached so computation escapes @MainActor
+                // isolation and runs on a background thread.
+                self.searchTask = Task.detached { [weak self] in
                     let results = await Self.computeFilteredResults(
                         query: query, items: items
                     )
                     guard !Task.isCancelled else { return }
-                    self?.filteredResults = results
+                    await MainActor.run {
+                        self?.filteredResults = results
+                    }
                 }
             }
             .store(in: &cancellables)
