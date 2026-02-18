@@ -17,6 +17,9 @@ struct SearchView: View {
             Divider()
                 .background(.white.opacity(0.1))
             resultsSection
+            Divider()
+                .background(.white.opacity(0.1))
+            ShortcutHintsBar()
         }
     }
 
