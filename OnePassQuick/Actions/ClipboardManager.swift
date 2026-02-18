@@ -6,6 +6,11 @@ import os.log
 /// Passwords are set with the `org.nspasteboard.ConcealedType` pasteboard type
 /// so clipboard history tools and password managers know the content is sensitive.
 /// All clipboard content auto-clears after 30 seconds.
+///
+/// Marked `@MainActor` because `NSPasteboard` and `clearTask` must be
+/// accessed from the main thread. The annotation enforces this at compile
+/// time rather than relying on caller discipline.
+@MainActor
 enum ClipboardManager {
 
     private static let log = Logger(
