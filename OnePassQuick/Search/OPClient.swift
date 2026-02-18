@@ -13,6 +13,8 @@ enum OPClientError: Error, Equatable {
     case decodingFailed(String)
     /// The requested field does not exist on the item.
     case fieldNotFound(String)
+    /// The CLI process exceeded the allowed time limit.
+    case timeout
 
     var localizedDescription: String {
         switch self {
@@ -26,6 +28,8 @@ enum OPClientError: Error, Equatable {
             return "Failed to parse items: \(detail)"
         case .fieldNotFound(let detail):
             return "Field not found: \(detail)"
+        case .timeout:
+            return "1Password CLI timed out. Check that 1Password is unlocked."
         }
     }
 }
@@ -46,6 +50,11 @@ enum OPClient {
         "/opt/homebrew/bin/op",   // Apple Silicon
         "/usr/local/bin/op",      // Intel
     ]
+
+    /// Maximum time (in seconds) a CLI process is allowed to run before
+    /// being terminated. Covers scenarios where `op` hangs waiting for a
+    /// Touch ID prompt that never completes.
+    private static let processTimeout: TimeInterval = 30
 
     // MARK: - Public API
 
@@ -219,76 +228,122 @@ enum OPClient {
     /// Uses `terminationHandler` and pipe `readabilityHandler` to avoid blocking
     /// the cooperative thread pool. Pipes are drained incrementally to prevent
     /// deadlock when output exceeds the OS pipe buffer (~64KB on macOS).
+    ///
+    /// Supports both **timeout** (process is terminated after `processTimeout`
+    /// seconds) and **cancellation** (process is terminated when the parent
+    /// Swift Task is cancelled, e.g., panel dismissed during Touch ID).
     private static func runProcess(
         executablePath: String,
         arguments: [String]
     ) async throws -> (stdout: String, stderr: String, exitCode: Int32) {
-        try await withCheckedThrowingContinuation { continuation in
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: executablePath)
-            process.arguments = arguments
+        // State shared between the continuation, timeout, and cancellation
+        // handler. `didResume` prevents double-resumption which would crash.
+        let resumeGuard = ResumeGuard()
 
-            let stdoutPipe = Pipe()
-            let stderrPipe = Pipe()
-            process.standardOutput = stdoutPipe
-            process.standardError = stderrPipe
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executablePath)
+        process.arguments = arguments
 
-            // Accumulate data as it arrives to prevent pipe buffer deadlock
-            let stdoutAccumulator = PipeAccumulator()
-            let stderrAccumulator = PipeAccumulator()
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
 
-            stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty {
-                    stdoutAccumulator.append(data)
+        let stdoutAccumulator = PipeAccumulator()
+        let stderrAccumulator = PipeAccumulator()
+
+        stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if !data.isEmpty {
+                stdoutAccumulator.append(data)
+            }
+        }
+
+        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if !data.isEmpty {
+                stderrAccumulator.append(data)
+            }
+        }
+
+        /// Terminate the process and clean up pipe handlers.
+        func terminateProcess() {
+            if process.isRunning {
+                process.terminate()
+            }
+            stdoutPipe.fileHandleForReading.readabilityHandler = nil
+            stderrPipe.fileHandleForReading.readabilityHandler = nil
+        }
+
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                // Schedule timeout
+                let timeoutItem = DispatchWorkItem {
+                    guard resumeGuard.tryResume() else { return }
+                    log.warning(
+                        "Process timed out after \(Int(processTimeout))s: \(executablePath)"
+                    )
+                    terminateProcess()
+                    continuation.resume(throwing: OPClientError.timeout)
+                }
+                DispatchQueue.global().asyncAfter(
+                    deadline: .now() + processTimeout,
+                    execute: timeoutItem
+                )
+
+                process.terminationHandler = { terminatedProcess in
+                    timeoutItem.cancel()
+
+                    // Stop reading handlers
+                    stdoutPipe.fileHandleForReading.readabilityHandler = nil
+                    stderrPipe.fileHandleForReading.readabilityHandler = nil
+
+                    // Drain any remaining data
+                    stdoutAccumulator.append(
+                        stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+                    )
+                    stderrAccumulator.append(
+                        stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                    )
+
+                    guard resumeGuard.tryResume() else { return }
+
+                    let stdout = String(
+                        data: stdoutAccumulator.data, encoding: .utf8
+                    ) ?? ""
+                    let stderr = String(
+                        data: stderrAccumulator.data, encoding: .utf8
+                    ) ?? ""
+
+                    continuation.resume(
+                        returning: (
+                            stdout, stderr,
+                            terminatedProcess.terminationStatus
+                        )
+                    )
+                }
+
+                do {
+                    try process.run()
+                } catch {
+                    timeoutItem.cancel()
+                    terminateProcess()
+                    guard resumeGuard.tryResume() else { return }
+                    continuation.resume(
+                        throwing: OPClientError.executionFailed(
+                            "Failed to launch: \(error.localizedDescription)"
+                        )
+                    )
                 }
             }
-
-            stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty {
-                    stderrAccumulator.append(data)
-                }
-            }
-
-            process.terminationHandler = { terminatedProcess in
-                // Stop reading handlers
-                stdoutPipe.fileHandleForReading.readabilityHandler = nil
-                stderrPipe.fileHandleForReading.readabilityHandler = nil
-
-                // Drain any remaining data
-                stdoutAccumulator.append(
-                    stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                )
-                stderrAccumulator.append(
-                    stderrPipe.fileHandleForReading.readDataToEndOfFile()
-                )
-
-                let stdout = String(
-                    data: stdoutAccumulator.data, encoding: .utf8
-                ) ?? ""
-                let stderr = String(
-                    data: stderrAccumulator.data, encoding: .utf8
-                ) ?? ""
-
-                continuation.resume(
-                    returning: (
-                        stdout, stderr, terminatedProcess.terminationStatus
-                    )
-                )
-            }
-
-            do {
-                try process.run()
-            } catch {
-                stdoutPipe.fileHandleForReading.readabilityHandler = nil
-                stderrPipe.fileHandleForReading.readabilityHandler = nil
-                continuation.resume(
-                    throwing: OPClientError.executionFailed(
-                        "Failed to launch: \(error.localizedDescription)"
-                    )
-                )
-            }
+        } onCancel: {
+            // Don't claim resumeGuard here -- let the terminationHandler
+            // fire and resume the continuation normally. The caller sees
+            // the result but Task.isCancelled will be true.
+            log.info(
+                "Task cancelled, terminating process: \(executablePath)"
+            )
+            terminateProcess()
         }
     }
 
@@ -350,6 +405,26 @@ enum OPClient {
     /// The CLI outputs: `"username" isn't a field in the "..." item`
     private static func isFieldNotFoundError(_ message: String) -> Bool {
         message.contains("isn't a field in the")
+    }
+}
+
+// MARK: - Resume Guard
+
+/// Thread-safe one-shot flag that ensures a continuation is resumed
+/// exactly once. Used to coordinate between the termination handler,
+/// the timeout, and the cancellation handler -- any of which may fire
+/// first (and concurrently).
+private final class ResumeGuard: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _didResume = false
+
+    /// Returns `true` exactly once. All subsequent calls return `false`.
+    func tryResume() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if _didResume { return false }
+        _didResume = true
+        return true
     }
 }
 

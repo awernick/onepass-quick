@@ -172,6 +172,8 @@ struct SearchView: View {
             return "doc.questionmark.fill"
         case .fieldNotFound:
             return "questionmark.circle.fill"
+        case .timeout:
+            return "clock.badge.exclamationmark"
         }
     }
 }
