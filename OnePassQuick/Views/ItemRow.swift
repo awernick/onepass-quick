@@ -10,6 +10,8 @@ struct ItemRow: View {
     /// Empty when no query is active or the match was on another field.
     var titlePositions: [Int] = []
 
+    @ObservedObject private var preferences = Preferences.shared
+
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: item.categoryIcon)
@@ -43,13 +45,32 @@ struct ItemRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(
-            isSelected
-                ? RoundedRectangle(cornerRadius: 6)
-                    .fill(.blue.opacity(0.35))
-                : nil
-        )
+        .background {
+            if isSelected {
+                selectionBackground
+            }
+        }
         .contentShape(Rectangle())
+    }
+
+    // MARK: - Selection Style
+
+    /// Background view for the selected row, driven by user preference.
+    @ViewBuilder
+    private var selectionBackground: some View {
+        switch preferences.selectionStyle {
+        case .blue:
+            Rectangle().fill(.blue.opacity(0.35))
+        case .white:
+            Rectangle().fill(.white.opacity(0.15))
+        case .bordered:
+            Rectangle()
+                .fill(.white.opacity(0.1))
+                .overlay(
+                    Rectangle()
+                        .strokeBorder(.white.opacity(0.15), lineWidth: 1)
+                )
+        }
     }
 
     // MARK: - Highlighted Title

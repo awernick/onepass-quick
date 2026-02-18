@@ -63,6 +63,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(loginItem)
 
         menu.addItem(NSMenuItem.separator())
+
+        // Appearance submenu
+        let appearanceItem = NSMenuItem(title: "Appearance", action: nil, keyEquivalent: "")
+        let appearanceMenu = NSMenu()
+        for style in Preferences.SelectionStyle.allCases {
+            let item = NSMenuItem(
+                title: "\(style.label) Selection",
+                action: #selector(changeSelectionStyle(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = style.rawValue
+            item.state = Preferences.shared.selectionStyle == style ? .on : .off
+            appearanceMenu.addItem(item)
+        }
+        appearanceItem.submenu = appearanceMenu
+        menu.addItem(appearanceItem)
+
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(
             NSMenuItem(title: "Quit OnePass Quick", action: #selector(quit), keyEquivalent: "q")
         )
@@ -105,6 +124,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // or not properly signed. Log but don't crash.
             NSLog("Failed to toggle login item: \(error)")
         }
+        rebuildMenu()
+    }
+
+    @objc private func changeSelectionStyle(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let style = Preferences.SelectionStyle(rawValue: raw)
+        else { return }
+        Preferences.shared.selectionStyle = style
         rebuildMenu()
     }
 
