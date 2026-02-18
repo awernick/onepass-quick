@@ -175,7 +175,7 @@ struct CategoryActions {
             return CategoryActions(
                 primary: Action(
                     label: "Username",
-                    source: .additionalInfo,
+                    source: .field("username"),
                     concealed: false
                 ),
                 secret: Action(
@@ -221,7 +221,7 @@ struct CategoryActions {
                 primary: Action(
                     label: "License Key",
                     source: .field("reg_code"),
-                    concealed: false
+                    concealed: true
                 ),
                 secret: nil,
                 tertiary: nil
@@ -229,17 +229,66 @@ struct CategoryActions {
 
         case "PASSWORD":
             return CategoryActions(
-                primary: nil,
-                secret: Action(
+                primary: Action(
                     label: "Password",
                     source: .field("password"),
+                    concealed: true
+                ),
+                secret: nil,
+                tertiary: nil
+            )
+
+        case "IDENTITY":
+            return CategoryActions(
+                primary: Action(
+                    label: "Name",
+                    source: .additionalInfo,
+                    concealed: false
+                ),
+                secret: Action(
+                    label: "Email",
+                    source: .field("email"),
+                    concealed: false
+                ),
+                tertiary: nil
+            )
+
+        case "BANK_ACCOUNT":
+            return CategoryActions(
+                primary: Action(
+                    label: "Account #",
+                    source: .field("accountNo"),
+                    concealed: true
+                ),
+                secret: Action(
+                    label: "Routing #",
+                    source: .field("routingNo"),
+                    concealed: true
+                ),
+                tertiary: Action(
+                    label: "PIN",
+                    source: .field("pin"),
+                    concealed: true
+                )
+            )
+
+        case "MEMBERSHIP":
+            return CategoryActions(
+                primary: Action(
+                    label: "Member #",
+                    source: .field("membership_no"),
+                    concealed: false
+                ),
+                secret: Action(
+                    label: "PIN",
+                    source: .field("pin"),
                     concealed: true
                 ),
                 tertiary: nil
             )
 
         default:
-            // LOGIN-like fallback for IDENTITY, MEMBERSHIP, SECURE_NOTE, etc.
+            // Fallback for SECURE_NOTE, DOCUMENT, and other categories.
             return CategoryActions(
                 primary: Action(
                     label: "Username",
@@ -251,11 +300,7 @@ struct CategoryActions {
                     source: .field("password"),
                     concealed: true
                 ),
-                tertiary: Action(
-                    label: "OTP",
-                    source: .otp,
-                    concealed: true
-                )
+                tertiary: nil
             )
         }
     }
