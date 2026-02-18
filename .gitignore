@@ -4,6 +4,9 @@ OnePassQuick.xcodeproj/
 # Local signing overrides (see project.local.example.yml)
 project.local.yml
 
+# AI agent instructions (local dev tooling, not for contributors)
+AGENTS.md
+
 # Xcode
 build/
 DerivedData/
